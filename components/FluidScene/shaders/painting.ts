@@ -36,6 +36,14 @@ export const paintingFragmentShader = /* glsl */ `
   uniform float uTintAmount;
   uniform float uWarp;
   uniform float uRippleStrength;
+  uniform sampler2D uNoise;
+  uniform vec2 uWispOffset;
+  uniform float uWispScale;
+  uniform float uWispAmount;
+  uniform float uWispGap;
+  uniform vec3 uWispColor;
+  uniform float uWispWarp;
+  uniform float uWispClear;
 
   vec3 palette(float t, vec3 a, vec3 b, vec3 c, vec3 d) {
     return a + b * cos(6.283185 * (c * t + d));
@@ -98,8 +106,39 @@ export const paintingFragmentShader = /* glsl */ `
       uPaletteA, uPaletteB, uPaletteC, uPaletteD
     );
 
+    /* Slierten lucht die langstrekken. Bewust hier en niet in de nagloed: die
+       buffer voedt zichzelf, dus daar zou dit zich per frame opstapelen, en het
+       zou blijven staan waar het geschreven is in plaats van mee te scrollen.
+       Hier wordt het elk frame vers gelezen en raakt het de oplosser niet.
+
+       De drempel verderop is wat er slierten van maakt in plaats van een deken:
+       alleen de toppen van de ruis komen erdoor, de rest blijft leeg.
+
+       De uv leest de stroming mee, en daarmee reageert de mist vanzelf op zowel
+       de cursor als de draak, want allebei staan ze al in dat veld. Meeslepen is
+       iets anders dan de vervorming die op het object zat: die boog het beeld
+       van de draak zelf krom en oogde als water, dit verschuift alleen waar de
+       mist hangt, zoals lucht die opzij geduwd wordt. Vóór het schalen opgeteld,
+       zodat de grofheid van de ruis de sterkte van het slepen niet verandert. */
+    vec2 wispUv = (screenUv + velocity * uWispWarp) * uWispScale + uWispOffset;
+
+    float cloud = texture2D(uNoise, wispUv).r;
+    float wisp = smoothstep(uWispGap, 1.0, cloud) * uWispAmount;
+
+    /* en waar het hard waait blaast het de mist weg: de draak trekt een schoon
+       spoor door de wolken en je cursor veegt ze open */
+    wisp *= 1.0 - clamp(amount * uWispClear, 0.0, 1.0);
+
     vec3 revealed = object + tint * uTintAmount;
     vec3 color = mix(uBackground, mix(uBackground, revealed, amount), uReveal);
+
+    /* De sliert legt zijn eigen vleug over het beeld in plaats van het object te
+       onthullen. Dat is met opzet: onthullen werkt alleen waar het object staat,
+       en in lege lucht scheelt de doelachtergrond zo weinig van de pagina dat je
+       er niets van ziet zonder de draak meteen een permanente schim te maken.
+       Zo trekt de sliert overal langs, en waar hij over de draak gaat wast hij
+       hem een beetje weg, zoals damp die voor je langs drijft. */
+    color = mix(color, uWispColor, wisp * uReveal);
 
     gl_FragColor = vec4(linearToSRGB(color), 1.0);
   }

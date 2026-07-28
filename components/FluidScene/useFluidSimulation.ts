@@ -25,7 +25,7 @@ import {
   pressureFragmentShader,
 } from './shaders/projection'
 import { accumulationFragmentShader } from './shaders/accumulation'
-import type { SimulationConfig } from './types'
+import type { SimulationConfig, Vec2 } from './types'
 
 /**
  * Eén penseel dat kracht in het veld zet. De vorm is een capsule tussen de
@@ -206,6 +206,7 @@ export const useFluidSimulation = (config: SimulationConfig, brushCount: number)
           uVelocity: { value: null },
           uAccumulation: { value: null },
           uAttenuation: { value: config.attenuation },
+          uDrift: { value: new Vector2() },
         },
       }),
     }
@@ -238,7 +239,12 @@ export const useFluidSimulation = (config: SimulationConfig, brushCount: number)
     [materials, pass],
   )
 
-  const step = (renderer: WebGLRenderer) => {
+  /**
+   * `drift` is de verschuiving van de nagloed voor deze stap, in uv van de
+   * buffer. De aanroeper rekent hem uit, want die kent de beeldverhouding en de
+   * windrichting; hier is het alleen nog een vector.
+   */
+  const step = (renderer: WebGLRenderer, drift: Vec2 = { x: 0, y: 0 }) => {
     const { uniforms: force } = materials.externalForce
     const { uniforms: advect } = materials.advection
     const { uniforms: divergence } = materials.divergence
@@ -278,6 +284,7 @@ export const useFluidSimulation = (config: SimulationConfig, brushCount: number)
     divergence.uDelta.value = config.timeStep
     subtract.uDelta.value = config.timeStep
     accumulate.uAttenuation.value = config.attenuation
+    accumulate.uDrift.value.set(drift.x, drift.y)
 
     /* 1. penselen */
     force.uPrevious.value = velocity.read.texture
@@ -317,6 +324,8 @@ export const useFluidSimulation = (config: SimulationConfig, brushCount: number)
   return {
     brushes,
     step,
+    /* de eindpass leest dezelfde ruis voor zijn luchtslierten */
+    noise,
     get texture(): Texture {
       return accumulation.read.texture
     },
