@@ -1,4 +1,23 @@
 export type Vec2 = { x: number; y: number }
+export type Vec3 = { x: number; y: number; z: number }
+
+/**
+ * De plekken waarmee een geanimeerd model zichzelf roert: de mesh plus de
+ * vertexindexen die uitgekozen zijn. Per frame wordt daar de wereldpositie van
+ * opgevraagd. Leeg voor de bol en voor modellen zonder animatie.
+ */
+export type StirSurface = {
+  mesh: import('three').SkinnedMesh | null
+  vertices: number[]
+}
+
+/** een opgemeten punt op het oppervlak van een model, zie stirSurface.ts */
+export type PointMotion = {
+  /** gemiddelde plek van het punt over de hele clip, in wereldruimte */
+  center: Vec3
+  /** grootste onderlinge afstand tussen de plekken die het punt aandoet */
+  amplitude: number
+}
 
 export type ObjectConfig = {
   /** kleur van het ingebouwde object; een eigen model houdt zijn eigen kleur */
@@ -7,6 +26,19 @@ export type ObjectConfig = {
   background: string
   /** lengte over de langste as, in scene-eenheden */
   length: number
+  /**
+   * De camera kijkt recht naar beneden op het object, en welke kant je dan te
+   * zien krijgt hangt aan het model. Vandaar deze twee.
+   *
+   * `flipped` is een halve slag om de as die op het scherm van onder naar boven
+   * loopt: je ziet de andere kant van het model, kop en staart blijven dezelfde
+   * kant op wijzen.
+   *
+   * `spin` draait in het beeldvlak, in graden, en zet dus de kop de kant op die
+   * je wil. 180 zet hem precies om.
+   */
+  flipped: boolean
+  spin: number
   /** hoogte waarop het object zweeft */
   height: number
   /** snelheid richting het doel, in eenheden per seconde */

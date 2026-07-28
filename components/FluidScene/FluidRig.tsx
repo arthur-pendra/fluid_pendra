@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useRef } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal, useFrame, useThree } from '@react-three/fiber'
 import { useFBO } from '@react-three/drei'
 import {
@@ -24,7 +24,7 @@ import {
 } from './projection'
 import { fullscreenVertexShader } from './shaders/fullscreen'
 import { paintingFragmentShader } from './shaders/painting'
-import type { FluidSceneConfig } from './types'
+import type { FluidSceneConfig, StirSurface } from './types'
 import type { PointerState } from './pointer'
 
 /* de camera kijkt recht naar beneden; het zichtbare vlak is twee eenheden
@@ -101,27 +101,36 @@ const FluidRig = ({ config, modelUrl, paused, pointer }: FluidRigProps) => {
   /* toestand die per frame verandert en geen render hoeft te veroorzaken */
   const motion = useRef(createMotionState())
   const reveal = useRef(0)
-  const reducedMotion = useRef(false)
   const travelled = useRef<number[]>([])
   const clickedAt = useRef<number | null>(null)
   const lastClick = useRef<number | null>(null)
   const scratch = useRef(new Vector3())
 
+  /* de plekken waarmee een geanimeerd model zichzelf roert; leeg voor de bol en
+     voor modellen zonder animatie */
+  const stir = useRef<StirSurface>({ mesh: null, vertices: [] })
+  const handleStirSurface = useCallback((surface: StirSurface) => {
+    stir.current = surface
+  }, [])
+
+  /* dit verandert vrijwel nooit, en het moet als prop mee naar de animatie, dus
+     state in plaats van een ref */
+  const [reducedMotion, setReducedMotion] = useState(false)
+
   useEffect(() => {
     const query = window.matchMedia('(prefers-reduced-motion: reduce)')
-    const update = () => {
-      reducedMotion.current = query.matches
-    }
+    const update = () => setReducedMotion(query.matches)
     update()
     query.addEventListener('change', update)
     return () => query.removeEventListener('change', update)
   }, [])
 
+  const frozen = paused || reducedMotion
+
   useFrame((state, rawDelta) => {
     const { gl, scene, camera } = state
     /* na een verborgen tab is de delta enorm; afkappen voorkomt een sprong */
     const delta = Math.min(rawDelta, 1 / 30)
-    const frozen = paused || reducedMotion.current
     const ratio = size.width / Math.max(size.height, 1)
 
     const { halfWidth, halfHeight } = planeHalfSize(FIELD_OF_VIEW, distance, ratio)
@@ -149,11 +158,16 @@ const FluidRig = ({ config, modelUrl, paused, pointer }: FluidRigProps) => {
 
     if (!frozen) motion.current = stepMotion(motion.current, config.object, delta)
 
+    /* een model dat zichzelf roert hoeft niet rond te dwalen om zichtbaar te
+       blijven, dus dat blijft in het midden staan */
+    const surface = stir.current
+    const anchored = surface.mesh !== null && surface.vertices.length > 0
+
     if (objectRef.current) {
       objectRef.current.position.set(
-        motion.current.visible.x,
+        anchored ? 0 : motion.current.visible.x,
         config.object.height,
-        motion.current.visible.y,
+        anchored ? 0 : motion.current.visible.y,
       )
     }
 
@@ -210,11 +224,28 @@ const FluidRig = ({ config, modelUrl, paused, pointer }: FluidRigProps) => {
 
     applyBrush(0, input.uv, sim.cursorForce)
 
-    const points = stirPoints(motion.current, config.object.stirPoints, config.object.length)
-    points.forEach((point, index) => {
-      scratch.current.set(point.x, config.object.height, point.y).project(objectCamera)
-      applyBrush(index + 1, ndcToUv(scratch.current.x, scratch.current.y), sim.objectForce)
-    })
+    if (anchored && surface.mesh) {
+      /* de mixer heeft deze frame alleen de lokale transforms gezet; zonder dit
+         leest getVertexPosition de botstand van het vorige frame */
+      objectScene.updateMatrixWorld(true)
+
+      for (let index = 0; index < config.object.stirPoints; index++) {
+        const vertex = surface.vertices[index]
+        if (vertex === undefined) {
+          applyBrush(index + 1, null, sim.objectForce)
+          continue
+        }
+        surface.mesh.getVertexPosition(vertex, scratch.current)
+        surface.mesh.localToWorld(scratch.current).project(objectCamera)
+        applyBrush(index + 1, ndcToUv(scratch.current.x, scratch.current.y), sim.objectForce)
+      }
+    } else {
+      const points = stirPoints(motion.current, config.object.stirPoints, config.object.length)
+      points.forEach((point, index) => {
+        scratch.current.set(point.x, config.object.height, point.y).project(objectCamera)
+        applyBrush(index + 1, ndcToUv(scratch.current.x, scratch.current.y), sim.objectForce)
+      })
+    }
 
     /* 1. het object naar zijn eigen render target */
     gl.setRenderTarget(objectTarget)
@@ -251,7 +282,13 @@ const FluidRig = ({ config, modelUrl, paused, pointer }: FluidRigProps) => {
   return (
     <>
       {createPortal(
-        <FloatingObject ref={objectRef} config={config.object} modelUrl={modelUrl} />,
+        <FloatingObject
+          ref={objectRef}
+          config={config.object}
+          modelUrl={modelUrl}
+          frozen={frozen}
+          onStirSurface={handleStirSurface}
+        />,
         objectScene,
       )}
       <mesh frustumCulled={false}>

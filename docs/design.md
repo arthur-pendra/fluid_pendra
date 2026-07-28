@@ -100,20 +100,52 @@ in uv-verplaatsing per frame, het origineel in zijn eigen krachtschaal.
 "niets te zien" en "veld verzadigt en het beeld slaat door" is smal. Die twee
 staan daarom in het paneel onder "stroming".
 
+## Geanimeerde modellen
+
+Brengt een glb zijn eigen animatie mee, dan verandert er iets aan de opzet. Het
+object hoeft dan niet meer rond te dwalen om zichtbaar te blijven: het roert
+zichzelf. Het blijft in het midden staan en de roerpunten hangen aan plekken op
+zijn eigen oppervlak, die per frame worden opgevraagd. Een vleugelpunt legt per
+slag meer weg af dan het hele object in een hele driftcirkel, dus dat is een
+sterkere bron dan een lijn door een stilstaand object. Volgen en drift blijven
+gelden voor de bol en voor modellen zonder animatie; het component kiest zelf,
+er is geen knop voor.
+
+Twee dingen zijn daarbij tegen de intuïtie in gegaan, en die staan er niet voor
+niets zo in.
+
+Roerpunten hangen aan vertices, niet aan botten, ook al lijkt dat laatste de
+kortere weg. De botten van een glTF-model staan in hun eigen ruimte, en het
+verschil met de plek waar het model verschijnt zit in de inverse bind matrices.
+Bij deze draak liggen de botten tien eenheden boven de zichtbare mesh, achter de
+camera langs. Waar iets echt uitkomt weet je pas na skinning, en dat geeft
+`SkinnedMesh.getVertexPosition` plus `localToWorld`.
+
+Passen gaat op een zelf opgemeten box, niet op `Box3.setFromObject`. Die laatste
+leest voor een skinned mesh de gecachte bind-pose box, en die klopt hier niet:
+het model werd er tien eenheden naast gezet en verdween achter de camera. De box
+komt daarom uit dezelfde meting als de roerpunten, over de hele clip, zodat het
+model tijdens de volledige vleugelslag in beeld blijft. Om dezelfde reden staat
+frustum culling uit op de mesh: de cull-bol van een skinned mesh wordt uit de
+bind pose berekend en daarna nog eens met de huidige matrixWorld
+vermenigvuldigd, waardoor een geschaald en bewegend model wegvalt terwijl het pal
+in beeld staat. Culling levert hier ook niets op, want het object is juist op het
+beeld gepast.
+
 ## Randgevallen
 
 Geen WebGL geeft een stille terugval naar de achtergrondkleur. Reduced motion
-bevriest de simulatie. Een model dat niet laadt valt terug op de bol met een
-waarschuwing. Tab verborgen pauzeert, en de delta wordt afgekapt zodat de
+bevriest de simulatie en de animatie. Een model dat niet laadt valt terug op de
+bol met een waarschuwing. Tab verborgen pauzeert, en de delta wordt afgekapt zodat de
 simulatie bij terugkomst niet opspringt. Resize schaalt de buffers mee met een
 dpr-plafond van 1,5.
 
 ## Testen
 
 De rekenkundige kern is puur en heeft unit tests: het objectgedrag (doel
-volgen, drift, de lijn met roerpunten) en de projectie (scherm naar uv naar
-vlak). Vijftien tests, `npm test`. Het beeld zelf wordt niet automatisch
-getest.
+volgen, drift, de lijn met roerpunten), de projectie (scherm naar uv naar vlak)
+en de keuze van de roerpunten op een geanimeerd oppervlak. Achtentwintig tests,
+`npm test`. Het beeld zelf wordt niet automatisch getest.
 
 ## Wat er bewust niet in zit
 

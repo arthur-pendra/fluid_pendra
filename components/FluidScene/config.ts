@@ -18,12 +18,18 @@ export const defaultConfig: FluidSceneConfig = {
   object: {
     color: '#6f7278',
     background: '#efefef',
-    length: 1,
+    length: 1.25,
+    /* de rug naar de camera, en een halve slag zodat de kop naar boven wijst */
+    flipped: false,
+    spin: 180,
     height: 0,
     followSpeed: 3.4,
     driftRadius: 0.34,
     driftSpeed: 0.22,
-    stirPoints: 7,
+    /* een geanimeerd model roert met deze punten over zijn eigen oppervlak,
+       dus hier bepaal je hoeveel ervan tegelijk zichtbaar wordt. Voor de bol en
+       voor stille modellen is het het aantal punten over de lengte. */
+    stirPoints: 14,
     targetThrottle: 3000,
   },
 

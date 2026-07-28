@@ -1,7 +1,8 @@
 # Fluid scene
 
-Een 3D-object dat je alleen ziet waar de vloeistof beweegt. Het object volgt je
-cursor, een klik stuurt het er direct heen met een kleurimpuls.
+Een 3D-object dat je alleen ziet waar de vloeistof beweegt. Een geanimeerd model
+hangt in het midden en roert zichzelf zichtbaar; een stil model volgt je cursor.
+Een klik geeft een kleurimpuls.
 
 Next.js 16, React Three Fiber, TypeScript, CSS Modules.
 
@@ -33,15 +34,45 @@ draaien. Geef de ouder een hoogte, het component vult die volledig.
 Props: `modelUrl` (optioneel, zonder dit verschijnt een bol), `className`,
 `paused`, `config`.
 
+Brengt het model een animatie mee, dan draait die, en dan blijft het object in
+het midden staan: de roerpunten hangen dan aan de plekken op zijn eigen
+oppervlak die het hardst bewegen, dus het onthult zichzelf. Een stil model of de
+ingebouwde bol volgt de cursor en drijft rond, want anders valt het weg. Dat
+kiest het component zelf.
+
 Het component luistert alleen op zijn eigen element, kaapt de scroll niet en
 zet niets op `window`.
 
 ## Je eigen model erin
 
-Exporteer als glb: één mesh, geen camera's, geen lichten, geen animaties. Zet
-het bestand in `public/models/` en wijs `modelUrl` ernaar. Schaal en middelpunt
-worden automatisch gecorrigeerd, en een gewoon PBR-materiaal wordt omgezet naar
-vlakke weergave, want de scene heeft geen lichtbronnen.
+Exporteer als glb: één mesh, geen camera's, geen lichten. Een skinned mesh met
+animatie mag, de eerste clip wordt afgespeeld. Zet het bestand in
+`public/models/` en wijs `modelUrl` ernaar. Schaal en middelpunt worden
+automatisch gecorrigeerd, en een gewoon PBR-materiaal wordt omgezet naar vlakke
+weergave, want de scene heeft geen lichtbronnen.
+
+De camera kijkt recht naar beneden op het object, en welke kant je dan ziet hangt
+aan het model. Twee knoppen daarvoor: `object.flipped` draait het model een halve
+slag zodat je de andere kant ziet, en `object.spin` draait in het beeldvlak, in
+graden, zodat de kop de kant op wijst die je wil.
+
+## Een model webklaar maken
+
+```bash
+node scripts/optimize-model.mjs <bron.gltf|glb> <doel.glb>
+```
+
+Draait op de aannames van deze scene, en dat scheelt veel. De render is unlit, dus
+normal, occlusion, TANGENT en NORMAL gaan eruit. Extra UV-sets die identiek zijn
+aan de eerste gaan eruit. Keyframes worden geresampled, want exports uit Sketchfab
+bakken dertig frames per seconde plat, ook waar niets beweegt. De textuur gaat naar
+WebP op 1024, en het geheel wordt met meshopt gecomprimeerd.
+
+De draak in deze repo ging van 14,1 MB naar 506 kB, met 11.257 keyframes over van
+de 146.317. Meshopt en niet Draco, zodat de decoder uit je eigen bundel komt in
+plaats van van een CDN. `KHR_materials_pbrSpecularGlossiness` wordt omgezet naar
+metal-roughness: three.js heeft die extensie laten vallen, dus zonder die stap
+laadt een Sketchfab-model wel maar blijft de textuur weg.
 
 ## Afstellen
 
