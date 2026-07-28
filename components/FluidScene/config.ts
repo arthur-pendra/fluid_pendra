@@ -67,7 +67,10 @@ export const defaultConfig: FluidSceneConfig = {
   },
 
   painting: {
-    warp: 0.005,
+    /* op nul: het model wordt onthuld door de stroming, maar niet meer door de
+       stroming vervormd. Hoger zet je het beeld mee met het veld, en dan lijkt
+       het alsof je door bewegend water naar het model kijkt. */
+    warp: 0,
     rippleStrength: 0.025,
     tintAmount: 0.02,
     paletteBase: [0.5, 0.5, 0.5],

@@ -96,7 +96,8 @@ export type SimulationConfig = {
 }
 
 export type PaintingConfig = {
-  /** hoe ver de uv van het object meebuigt met het veld */
+  /** hoe ver de uv van het object meebuigt met het veld; op 0 wordt het model
+      wel onthuld door de stroming maar niet vervormd */
   warp: number
   /** sterkte van de rimpel die de klikgolf in het beeld duwt */
   rippleStrength: number
