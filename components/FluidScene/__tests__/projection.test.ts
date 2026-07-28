@@ -1,0 +1,60 @@
+import { describe, expect, it } from 'vitest'
+import {
+  distanceForHeight,
+  ndcToUv,
+  planeHalfSize,
+  screenToSimulationUv,
+  uvToPlane,
+} from '../projection'
+
+describe('screenToSimulationUv', () => {
+  it('houdt het midden op het midden', () => {
+    const uv = screenToSimulationUv({ x: 0.5, y: 0.5 }, 2)
+    expect(uv.x).toBeCloseTo(0.5, 6)
+    expect(uv.y).toBeCloseTo(0.5, 6)
+  })
+
+  it('perst de y-as samen op een breed scherm, want de buffer is vierkant', () => {
+    const uv = screenToSimulationUv({ x: 0.5, y: 1 }, 2)
+    expect(uv.y).toBeCloseTo(0.25, 6)
+  })
+
+  it('perst de x-as samen op een hoog scherm', () => {
+    const uv = screenToSimulationUv({ x: 1, y: 0.5 }, 0.5)
+    expect(uv.x).toBeCloseTo(0.75, 6)
+  })
+
+  it('klapt de y-as om, want de buffer telt andersom', () => {
+    expect(screenToSimulationUv({ x: 0.5, y: 1 }, 1).y).toBeCloseTo(0, 6)
+    expect(screenToSimulationUv({ x: 0.5, y: 0 }, 1).y).toBeCloseTo(1, 6)
+  })
+})
+
+describe('ndcToUv', () => {
+  it('legt het clipgebied op nul tot een', () => {
+    expect(ndcToUv(-1, -1)).toEqual({ x: 0, y: 0 })
+    expect(ndcToUv(0, 0)).toEqual({ x: 0.5, y: 0.5 })
+    expect(ndcToUv(1, 1)).toEqual({ x: 1, y: 1 })
+  })
+})
+
+describe('planeHalfSize', () => {
+  it('geeft een halve hoogte van 1 op de afstand die daarvoor nodig is', () => {
+    const distance = distanceForHeight(45, 2)
+    const { halfWidth, halfHeight } = planeHalfSize(45, distance, 2)
+
+    expect(halfHeight).toBeCloseTo(1, 6)
+    expect(halfWidth).toBeCloseTo(2, 6)
+  })
+})
+
+describe('uvToPlane', () => {
+  it('zet het midden van het scherm op de oorsprong', () => {
+    expect(uvToPlane({ x: 0.5, y: 0.5 }, 2, 1)).toEqual({ x: 0, y: -0 })
+  })
+
+  it('klapt de y-as om, want in uv wijst die omhoog en in de scene naar -z', () => {
+    expect(uvToPlane({ x: 1, y: 1 }, 2, 1)).toEqual({ x: 2, y: -1 })
+    expect(uvToPlane({ x: 0, y: 0 }, 2, 1)).toEqual({ x: -2, y: 1 })
+  })
+})

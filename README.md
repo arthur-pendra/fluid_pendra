@@ -1,36 +1,61 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Fluid scene
 
-## Getting Started
+Een 3D-object dat je alleen ziet waar de vloeistof beweegt. Het object volgt je
+cursor, een klik stuurt het er direct heen met een kleurimpuls.
 
-First, run the development server:
+Next.js 16, React Three Fiber, TypeScript, CSS Modules.
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install
+npm run dev     # http://localhost:3003
+npm test        # unit tests op de rekenkern
+npm run build
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Het component gebruiken
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+De map `components/FluidScene/` is zelfstandig: kopieer hem naar een ander
+project, zorg dat `three`, `@react-three/fiber` en `@react-three/drei`
+geïnstalleerd zijn, en gebruik hem zo:
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```tsx
+'use client'
+import dynamic from 'next/dynamic'
 
-## Learn More
+const FluidScene = dynamic(() => import('@/components/FluidScene'), { ssr: false })
 
-To learn more about Next.js, take a look at the following resources:
+<FluidScene className={styles.scene} modelUrl="/models/mijn-model.glb" />
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+`ssr: false` is nodig: de scene raakt WebGL aan en mag niet op de server
+draaien. Geef de ouder een hoogte, het component vult die volledig.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Props: `modelUrl` (optioneel, zonder dit verschijnt een bol), `className`,
+`paused`, `config`.
 
-## Deploy on Vercel
+Het component luistert alleen op zijn eigen element, kaapt de scroll niet en
+zet niets op `window`.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Je eigen model erin
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Exporteer als glb: één mesh, geen camera's, geen lichten, geen animaties. Zet
+het bestand in `public/models/` en wijs `modelUrl` ernaar. Schaal en middelpunt
+worden automatisch gecorrigeerd, en een gewoon PBR-materiaal wordt omgezet naar
+vlakke weergave, want de scene heeft geen lichtbronnen.
+
+## Afstellen
+
+Alle knoppen staan in `components/FluidScene/config.ts`, met commentaar per
+waarde. Tijdens `npm run dev` verschijnt rechtsboven een Leva-paneel waarmee je
+de belangrijkste live kunt bijdraaien; de waarden die je daar vindt zet je
+daarna in `config.ts`. In de productiebuild wordt dat paneel niet geladen.
+
+Twee knoppen die je waarschijnlijk als eerste wilt:
+
+- `object.driftRadius` en `driftSpeed`: hoe hard het object de vloeistof
+  beroert. Op nul valt het stil en verdwijnt het uit beeld, want het is alleen
+  zichtbaar waar de vloeistof beweegt.
+- `painting.revealByInk` en `simulation.inkDeposit`: hoe sterk en hoe lang het
+  object doorschijnt.
+
+Achtergrond en werking: `docs/design.md`.

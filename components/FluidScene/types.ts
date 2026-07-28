@@ -1,0 +1,98 @@
+export type Vec2 = { x: number; y: number }
+
+export type ObjectConfig = {
+  /** kleur van het ingebouwde object; een eigen model houdt zijn eigen kleur */
+  color: string
+  /** achtergrond van de render target, net iets donkerder dan de pagina */
+  background: string
+  /** lengte over de langste as, in scene-eenheden */
+  length: number
+  /** hoogte waarop het object zweeft */
+  height: number
+  /** snelheid richting het doel, in eenheden per seconde */
+  followSpeed: number
+  /** straal van de continue drift; op 0 valt het object stil */
+  driftRadius: number
+  /** tempo van die drift */
+  driftSpeed: number
+  /** aantal punten over de lengte van het object die de vloeistof beroeren */
+  stirPoints: number
+  /** hoe vaak de cursor een nieuw doel mag aanwijzen, in milliseconden */
+  targetThrottle: number
+}
+
+export type SimulationConfig = {
+  /** kantlengte van de vierkante simulatiebuffer */
+  resolution: number
+  /** vaste tijdstap van de oplosser, losgekoppeld van de framerate */
+  timeStep: number
+  /** hoeveel de stroming per stap inzakt */
+  deceleration: number
+  /** hoe lang de nagloed blijft staan; dicht bij 1 is lang */
+  attenuation: number
+  /** aantal Jacobi-iteraties voor het drukveld */
+  pressureIterations: number
+
+  /** hoeveel de ruisrichting de stroming overneemt */
+  randomDirection: number
+  /** schaal waarop de ruis gelezen wordt, grof en fijn */
+  firstNoiseScale: number
+  secondNoiseScale: number
+  /** onder deze snelheid valt de stroming in gaten uiteen */
+  velocityThreshold: number
+  /** zetje dat de stroming in die gaten krijgt */
+  gapVelocityBoost: number
+  /** binnen welke ruiswaarden die gaten vallen */
+  gapAmount: { min: number; max: number }
+
+  /** krachtvermenigvuldiger van de cursor en van de objectpunten */
+  cursorForce: number
+  objectForce: number
+  /** penseelstraal in uv bij volle snelheid */
+  brushSize: number
+  /** deel van die straal bij stilstand en bij volle snelheid */
+  brushSizeAtRest: number
+  brushSizeAtSpeed: number
+  /** bij welke genormaliseerde snelheid de straal maximaal is */
+  brushSpeedRange: number
+  /** maat waarmee snelheden genormaliseerd worden */
+  screenSpaceSize: number
+  /** hoe snel intensiteit opbouwt over de afgelegde afstand */
+  intensityVariation: number
+  /** duur van de golf na een klik, in seconden */
+  shockwaveDuration: number
+}
+
+export type PaintingConfig = {
+  /** hoe ver de uv van het object meebuigt met het veld */
+  warp: number
+  /** sterkte van de rimpel die de klikgolf in het beeld duwt */
+  rippleStrength: number
+  /** sterkte van de kleurzweem */
+  tintAmount: number
+  /** vaste delen van de kleurfunctie: a + b * cos(tau * (c * t + d)) */
+  paletteBase: [number, number, number]
+  paletteAmplitude: [number, number, number]
+  paletteFrequency: [number, number, number]
+  /** duur van de intro-fade, in seconden */
+  revealDuration: number
+}
+
+export type FluidSceneConfig = {
+  /** achtergrond van de pagina */
+  background: string
+  object: ObjectConfig
+  simulation: SimulationConfig
+  painting: PaintingConfig
+}
+
+export type FluidSceneProps = {
+  /** pad naar een glb; laat je hem weg dan verschijnt de ingebouwde bol */
+  modelUrl?: string
+  /** eigen maatvoering; het component vult zijn ouder volledig */
+  className?: string
+  /** bevriest de simulatie zonder de scene af te breken */
+  paused?: boolean
+  /** afwijkende instellingen; standaard komt alles uit defaultConfig */
+  config?: FluidSceneConfig
+}
