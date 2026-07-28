@@ -1,6 +1,7 @@
 'use client'
 
 import { Component, Suspense, forwardRef, useEffect, useMemo, type ReactNode } from 'react'
+import { useFrame } from '@react-three/fiber'
 import { useAnimations, useGLTF } from '@react-three/drei'
 import {
   AnimationMixer,
@@ -15,6 +16,8 @@ import {
   type SkinnedMesh,
 } from 'three'
 import { SkeletonUtils } from 'three/examples/jsm/Addons.js'
+import { beatProfile, sampleProfile } from './beat'
+import { readRig } from './rig'
 import { pickStirPoints } from './stirSurface'
 import type { ObjectConfig, PointMotion, StirSurface } from './types'
 
@@ -125,10 +128,16 @@ const findSkinnedMesh = (root: Object3D): SkinnedMesh | null => {
 const measureSurface = (
   root: Object3D,
   clip: AnimationClip,
-): StirSurface & { motion: PointMotion[]; box: Box3 } => {
+): {
+  mesh: SkinnedMesh | null
+  vertices: number[]
+  motion: PointMotion[]
+  box: Box3
+  speeds: number[]
+} => {
   const mesh = findSkinnedMesh(root)
   const box = new Box3()
-  if (!mesh) return { mesh: null, vertices: [], motion: [], box }
+  if (!mesh) return { mesh: null, vertices: [], motion: [], box, speeds: [] }
 
   const total = mesh.geometry.getAttribute('position').count
   const vertices: number[] = []
@@ -173,7 +182,16 @@ const measureSurface = (
     return { center: { x: center.x, y: center.y, z: center.z }, amplitude }
   })
 
-  return { mesh, vertices, motion, box }
+  /* Hoe hard het oppervlak op elk moment in de clip beweegt: de som van wat alle
+     bekeken punten sinds het vorige monster hebben afgelegd. Dat piekt tijdens
+     de vleugelslag en zakt in tijdens het zweven, en daar rekent beat.ts de
+     ongelijkmatige klok uit. Rondlopend gemeten, want de clip herhaalt. */
+  const speeds = tracks[0]?.map((_, step) => {
+    const next = (step + 1) % MOTION_SAMPLES
+    return tracks.reduce((sum, points) => sum + points[step].distanceTo(points[next]), 0)
+  }) ?? []
+
+  return { mesh, vertices, motion, box, speeds }
 }
 
 const Sphere = ({ config }: { config: ObjectConfig }) => (
@@ -206,16 +224,20 @@ const Model = ({ url, config, frozen, onStirSurface }: ModelProps) => {
     const clip = animations[0]
     if (!clip) {
       fitToBox(object, new Box3().setFromObject(object), orient)
-      return { object, surface: { mesh: null, vertices: [] } as StirSurface }
+      return { object, speeds: [], surface: { mesh: null, vertices: [], rig: null } as StirSurface }
     }
 
     /* eerst opmeten met het object nog op identiteit, dan passen op wat er
        daadwerkelijk gemeten is: de opgemeten box is de enige die klopt */
-    const { mesh, vertices, motion, box } = measureSurface(object, clip)
+    const { mesh, vertices, motion, box, speeds } = measureSurface(object, clip)
     fitToBox(object, box, orient)
 
     const picked = pickStirPoints(motion, config.stirPoints)
-    return { object, surface: { mesh, vertices: picked.map((slot) => vertices[slot]) } }
+    return {
+      object,
+      speeds,
+      surface: { mesh, vertices: picked.map((slot) => vertices[slot]), rig: readRig(object) },
+    }
   }, [
     scene,
     animations,
@@ -236,13 +258,31 @@ const Model = ({ url, config, frozen, onStirSurface }: ModelProps) => {
     }
   }, [actions, names])
 
-  /* pauze en prefers-reduced-motion moeten ook de animatie stilzetten, niet
-     alleen de vloeistof */
-  mixer.timeScale = frozen ? 0 : 1
+  /* De klok van de clip, ongelijkmatig: langzaam waar de vleugels langzaam
+     bewegen, snel waar ze snel bewegen. Zo blijven de vleugels langer gespreid
+     en gaat hij er in één keer doorheen, zonder dat er één bot verandert. Zie
+     beat.ts; op glideHold 0 valt het terug op een gelijkmatige klok.
+
+     Pauze en prefers-reduced-motion zetten de animatie helemaal stil. */
+  const profile = useMemo(
+    () => beatProfile(prepared.speeds, config.glideHold),
+    [prepared.speeds, config.glideHold],
+  )
+
+  useFrame(() => {
+    if (frozen) {
+      mixer.timeScale = 0
+      return
+    }
+    const action = names[0] ? actions[names[0]] : null
+    const duration = action?.getClip().duration ?? 0
+    mixer.timeScale =
+      action && duration > 0 ? sampleProfile(profile, action.time / duration) : 1
+  })
 
   useEffect(() => {
     onStirSurface(prepared.surface)
-    return () => onStirSurface({ mesh: null, vertices: [] })
+    return () => onStirSurface({ mesh: null, vertices: [], rig: null })
   }, [prepared, onStirSurface])
 
   return <primitive object={prepared.object} />

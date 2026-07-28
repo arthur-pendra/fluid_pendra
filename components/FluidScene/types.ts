@@ -9,6 +9,8 @@ export type Vec3 = { x: number; y: number; z: number }
 export type StirSurface = {
   mesh: import('three').SkinnedMesh | null
   vertices: number[]
+  /** de botketens waar de procedurele laag op schrijft; null zonder skelet */
+  rig: import('./rig').ModelRig | null
 }
 
 /** een opgemeten punt op het oppervlak van een model, zie stirSurface.ts */
@@ -20,32 +22,81 @@ export type PointMotion = {
 }
 
 /**
- * Hoe hard een vleugelslag de draak vooruit zet, zie thrust.ts. Alleen voor een
- * geanimeerd model: een drijvend object volgt de cursor en heeft geen slag.
- *
- * De as waarlangs dit gebeurt is `simulation.windDirection`, tegengesteld: waar
- * de wind naartoe gaat, gaat de draak vandaan.
+ * Zelfstandig vliegen met de kop vooruit, zie flight.ts. Alleen voor een
+ * geanimeerd model; de bol en stille modellen volgen de cursor en drijven, want
+ * die hebben geen kop om vooruit te zetten.
+ */
+export type FlightConfig = {
+  /** hoe ver hij zijwaarts wegzweeft, in wereldeenheden. Dit is het zweven
+      zelf, dus dit is de grootste van de twee. Het zichtbare vlak is er twee
+      hoog, dus 0,3 is bijna een derde van de beeldhoogte naar elke kant. */
+  driftSide: number
+  /** hoe ver hij naar voren en achteren zweeft; kleiner, anders wordt het
+      dobberen in plaats van dragen */
+  driftAhead: number
+  /** hoe snel dat zweven verloopt. Laag is traag en dragend; hoog wordt
+      onrustig en dan gaat het weer op schuiven lijken. */
+  driftRate: number
+  /** hoe ver de vleugelslag hem naar voren zet, in wereldeenheden */
+  beatSurge: number
+  /** hoeveel het lijf meekantelt met het zijwaarts zweven, in graden op zijn
+      snelst. Dit is wat zweven van glijden onderscheidt: een vleugel die naar
+      rechts draagt heeft zijn neus ook een beetje naar rechts. Te veel en hij
+      lijkt te sturen in plaats van te dragen. */
+  bankAngle: number
+  /** hoe snel het lijf die kanteling maakt, per seconde. Laag geeft gewicht;
+      hoog en het klapt van stand naar stand in plaats van te kantelen. */
+  bankRate: number
+}
+
+/**
+ * De procedurele laag bovenop de animatieclip, zie pose.ts en rig.ts. Alleen
+ * voor een model waarin de ketens gevonden worden; de bol en modellen zonder
+ * skelet merken er niets van.
+ */
+export type PoseConfig = {
+  /** uitslag van de staartpunt, in radialen per schakel */
+  tailSway: number
+  /** tempo van de golf door de staart, in radialen per seconde */
+  tailRate: number
+  /** hoeveel fase er over de hele staart staat; hoger geeft meer bochten
+      tegelijk, op 0 slaat de hele staart als één stuk uit */
+  tailWave: number
+  /** hoe ver de kop naar de cursor draait, in radialen; 0 zet het uit */
+  neckFollow: number
+  /** hoe snel de kop die draai maakt, per seconde. Laag is loom en kijkt na,
+      hoog plakt de kop aan de cursor en dan oogt het als een machine. */
+  neckRate: number
+}
+
+/**
+ * Hoe de vleugelslag uit de beweging van de roerpunten gelezen wordt, zie
+ * thrust.ts. Wat eruit komt is 0 tot 1 — hoeveel slag er nu in zit — en
+ * `flight.beatBoost` maakt daar snelheid van.
  */
 export type ThrustConfig = {
-  /**
-   * Hoe ver de draak op het hoogtepunt van een slag naar voren komt, in
-   * wereldeenheden. Dit is meteen de bovengrens van de uitslag, dus hij kan
-   * hiermee niet uit beeld raken. Het zichtbare vlak is twee eenheden hoog, dus
-   * 0,05 is een veertigste van het beeld.
-   */
-  thrustForce: number
   /**
    * Hoe snel de draak de slag volgt, per seconde. Laag geeft hem gewicht en
    * laat hem achterlopen; hoog plakt hem op de slag en dan oogt het mechanisch.
    * Rond de slagfrequentie is een goed begin.
    */
   thrustResponse: number
-  /** hoe snel de gemeten piek meezakt met de clip, zodat `thrustForce` in
-      wereldeenheden staat en niet aan dit model vasthangt */
+  /** hoe snel de gemeten piek meezakt met de clip, zodat `beatBoost` niet aan
+      dit model en deze clip vasthangt */
   thrustAdapt: number
+  /**
+   * Hoe scherp het verschil tussen zweven en slaan wordt uitvergroot, zie
+   * beat.ts. De klok van de clip loopt dan ongelijkmatig: langzaam waar de
+   * vleugels langzaam bewegen, snel waar ze snel bewegen. Op 0 loopt de clip
+   * gelijkmatig zoals hij bedoeld is. De rondgang duurt even lang, alleen de
+   * verdeling erbinnen verschuift.
+   */
+  glideHold: number
 }
 
-export type ObjectConfig = ThrustConfig & {
+export type ObjectConfig = ThrustConfig &
+  PoseConfig &
+  FlightConfig & {
   /** kleur van het ingebouwde object; een eigen model houdt zijn eigen kleur */
   color: string
   /** achtergrond van de render target, net iets donkerder dan de pagina */

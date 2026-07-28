@@ -23,24 +23,68 @@ export const defaultConfig: FluidSceneConfig = {
     flipped: false,
     spin: 180,
     height: 0,
+    /* Deze drie gelden alleen nog voor de bol en voor stille modellen. Een
+       geanimeerd model vliegt zelf, zie flight.ts, en trekt zich hier niets
+       meer van aan. */
     followSpeed: 3.4,
     driftRadius: 0.34,
     driftSpeed: 0.22,
-    /* een geanimeerd model roert met deze punten over zijn eigen oppervlak,
-       dus hier bepaal je hoeveel ervan tegelijk zichtbaar wordt. Voor de bol en
-       voor stille modellen is het het aantal punten over de lengte. */
+
     stirPoints: 14,
     targetThrottle: 3000,
 
-    /* Elke vleugelslag zet de draak een stukje naar voren. Doorgerekend op een
-       slag van 0,8 tot 2,2 Hz komt hij hiermee per slag 5 tot 10 procent van
-       zijn eigen lengte vooruit; op 0,05 was dat 2 tot 3 procent, en dat lag
-       tegen de rand van wat je nog ziet. Het volgen staat traag genoeg om hem
-       gewicht te geven, zodat de uitslag achterloopt op de slag in plaats van
-       er een kopie van te zijn. */
-    thrustForce: 0.15,
+    /* Zweven op de vleugels, met de kop vast naar voren.
+
+       Zijwaarts het meest, want dat is het zweven zelf; naar voren en achteren
+       de helft daarvan, anders wordt het dobberen. Doorgerekend over een kwartier
+       zweeft hij 28% van de beeldhoogte naar opzij en 17% naar voren en achteren,
+       oftewel een halve draaklengte breed.
+
+       Het driftempo bepaalt hoe vaak hij overhaalt:
+
+         0,05   elke 41 s van links naar rechts, te traag om nog te lezen
+         0,09   elke 21 s   <- nu
+         0,14   elke 14 s
+         0,20   elke 10 s, dan wordt het onrustig
+
+       bankAngle is wat zweven van glijden onderscheidt. Twaalf graden is genoeg
+       om te zien dat het lijf meegaat en te weinig om te lijken alsof hij
+       stuurt. */
+    driftSide: 0.3,
+    driftAhead: 0.14,
+    driftRate: 0.09,
+    beatSurge: 0.12,
+    bankAngle: 12,
+    bankRate: 1.6,
+
     thrustResponse: 6,
     thrustAdapt: 0.3,
+    glideHold: 0.9,
+
+    /* De procedurele laag op de clip.
+
+       tailSway staat per schakel en stapelt over dertig schakels op. Op de echte
+       botlengtes doorgerekend zwaait de punt daardoor veel verder dan het getal
+       doet vermoeden:
+
+         0,03    15% van de staartlengte, punt draait 16° t.o.v. de basis
+         0,08    38%                                  42°
+         0,12    54%                                  63°
+         0,06    29%                                  32°   <- nu
+         0,16    69%                                  85°
+         0,22    85%                                 116°, de staart krult om
+
+       Dit komt bovenop een clip die de staart al beweegt, dus dit is optellen
+       en geen vervangen. Het tempo staat met opzet los van de vleugelslag van
+       0,3 Hz: gaan die twee in de pas lopen, dan hoor je het patroon.
+
+       neckFollow is in radialen: 0,45 is een kwartslag, 1,3 is ruim 75 graden en
+       daarmee niet te missen welke kant hij op kijkt. */
+    tailSway: 0.06,
+    tailRate: 1.4,
+    tailWave: 3.2,
+    neckFollow: 0.7,
+    neckRate: 2.2,
   },
 
   simulation: {

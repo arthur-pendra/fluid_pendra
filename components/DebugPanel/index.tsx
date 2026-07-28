@@ -37,9 +37,26 @@ const DebugPanel = ({ onChange }: DebugPanelProps) => {
       { collapsed: false },
     ),
 
-    stuwkracht: folder(
+    leven: folder(
       {
-        thrustForce: { value: object.thrustForce, min: 0, max: 0.4, step: 0.005 },
+        tailSway: { value: object.tailSway, min: 0, max: 0.25, step: 0.005 },
+        tailRate: { value: object.tailRate, min: 0, max: 6, step: 0.05 },
+        tailWave: { value: object.tailWave, min: 0, max: 10, step: 0.1 },
+        neckFollow: { value: object.neckFollow, min: 0, max: 2, step: 0.01 },
+        neckRate: { value: object.neckRate, min: 0.1, max: 12, step: 0.1 },
+      },
+      { collapsed: false },
+    ),
+
+    zweven: folder(
+      {
+        driftSide: { value: object.driftSide, min: 0, max: 0.8, step: 0.01 },
+        driftAhead: { value: object.driftAhead, min: 0, max: 0.5, step: 0.01 },
+        driftRate: { value: object.driftRate, min: 0.01, max: 0.3, step: 0.005 },
+        beatSurge: { value: object.beatSurge, min: 0, max: 0.5, step: 0.005 },
+        bankAngle: { value: object.bankAngle, min: 0, max: 45, step: 0.5 },
+        bankRate: { value: object.bankRate, min: 0.2, max: 8, step: 0.1 },
+        glideHold: { value: object.glideHold, min: 0, max: 2.5, step: 0.05 },
         thrustResponse: { value: object.thrustResponse, min: 0.5, max: 30, step: 0.5 },
       },
       { collapsed: false },
@@ -83,8 +100,19 @@ const DebugPanel = ({ onChange }: DebugPanelProps) => {
         followSpeed: controls.followSpeed,
         driftRadius: controls.driftRadius,
         driftSpeed: controls.driftSpeed,
-        thrustForce: controls.thrustForce,
+        driftSide: controls.driftSide,
+        driftAhead: controls.driftAhead,
+        driftRate: controls.driftRate,
+        beatSurge: controls.beatSurge,
+        bankAngle: controls.bankAngle,
+        bankRate: controls.bankRate,
+        glideHold: controls.glideHold,
         thrustResponse: controls.thrustResponse,
+        tailSway: controls.tailSway,
+        tailRate: controls.tailRate,
+        tailWave: controls.tailWave,
+        neckFollow: controls.neckFollow,
+        neckRate: controls.neckRate,
       },
       simulation: {
         ...simulation,

@@ -159,45 +159,116 @@ op kijkt staat nergens in een glb, en de richting waarin een vleugel het hardst
 veegt is bij een symmetrische animatie niet te onderscheiden van zijn
 tegengestelde.
 
-### Stuwkracht uit de slag
+### Zweven, kantelen, en een zet per slag
 
-De draak stond stil op de oorsprong. Nu zet elke vleugelslag hem een stukje naar
-voren, tegen de windas in. Meten hoeft daar niet apart voor: voor de wind wordt
-per roerpunt al uitgerekend hoeveel van zijn beweging benedenwinds gaat, en dat
-signaal piekt tijdens de neerslag en valt weg tijdens de terugslag. Dezelfde
-derde wet die de wind verklaart, andersom gelezen.
+De draak stond stil op de oorsprong. Nu zweeft hij, en dat is via twee doodlopende
+wegen gegaan die allebei aantrekkelijk zijn.
 
-Bij de vis van Immersive Garden loopt dit precies omgekeerd, en dat is het
-noemen waard omdat het de voor de hand liggende route is. Daar stuurt een boid
-de snelheid aan en volgt de staartslag daaruit — `oscillationPower` is niets
-anders dan de snelheid maal een factor, en amplitude en frequentie zijn er
-remaps van. Dat kan omdat die vis procedureel buigt over drie gewrichten. Onze
-draak brengt een gebakken clip mee, dus daar valt niets uit te sturen: de slag
-ligt vast en de stuwkracht moet er juist uit afgeleid worden.
+De eerste was een doelvolger met een lissajous eroverheen — de opzet die voor de
+bol prima werkte. Die schuift zijwaarts door het beeld: het lijf wijst de ene
+kant op en de beweging gaat de andere kant op, en dat leest als een sprite die
+verschoven wordt. Bij een klik verzet het doel zich bovendien ineens.
 
-De eerste opzet was de natuurkundige: kracht bij een snelheid optellen,
-weerstand eraf, een veer die terugtrekt naar het midden. Doorgerekend op een
-slag van anderhalve hertz gaf dat 0,3% beeldhoogte aan wiebel op een uitslag van
-4% — de draak ging een stukje vooruit staan en bleef daar hangen. Dat is geen
-kwestie van afstellen. Massa met een veer is een laagdoorlaat van de tweede
-orde, en die dempt alles boven zijn eigen frequentie met het kwadraat van de
-verhouding; de slag zit daar ver boven, dus de losse duwtjes middelen uit tot
-een constante verschuiving. Zichtbaar krijgen zou betekenen de veer op de
-slagfrequentie afstemmen, en die staat in de clip en nergens in de code.
+De tweede draaide dat om: altijd vooruit langs de eigen neus, met een begrensde
+draaisnelheid, zoals de vis van Immersive Garden. Dat vliegt, maar dan vliegt hij
+ook wég — hij keert om, gaat ondersteboven het beeld door, en de camera hangt
+niet meer boven een draak maar boven een baan.
 
-De uitslag volgt de slag daarom rechtstreeks, met vertraging. Dat is
-frequentie-onafhankelijk: doorgerekend over 0,6 tot 3 Hz blijft de wiebel tussen
-0,9% en 2,3% van de beeldhoogte, en hij loopt per slag vrijwel helemaal terug
-naar nul in plaats van te blijven staan. De vertraging is wat het als duwen laat
-lezen in plaats van als pulseren — zonder is de uitslag een kopie van de slag.
-De uitslag kan per constructie nooit voorbij `thrustForce` komen, dus er is geen
-grens nodig om de draak in beeld te houden.
+Wat het wel is zit ertussenin. De kop staat vast naar voren en zijn plek zweeft
+daar subtiel omheen: zijwaarts het meest, want dat is wat een vleugel doet als hij
+een luchtstroom pakt, en naar voren en achteren wat minder. Doorgerekend over een
+kwartier is dat 30% van de beeldhoogte opzij en 20% naar voren, oftewel een halve
+draaklengte breed, met een overhaal van links naar rechts elke 21 seconden.
+
+Het lijf kantelt daar tot tien graden in mee, en dát is wat zweven van glijden
+onderscheidt: een vleugel die naar rechts draagt heeft zijn neus ook een beetje
+naar rechts. De kanteling wordt genormaliseerd op de steilste helling die de ruis
+kan hebben, zodat `bankAngle` gewoon in graden staat en niet meebeweegt met de
+driftstraal. De windas kantelt mee, dus zijn spoor blijft achter hém liggen.
+
+De plek komt uit waarde-ruis en niet uit sinussen. Een lissajous heeft een
+periode, en over een minuut kijken zie je die terugkomen — precies het patroon
+dat een procedurele laag juist moet weghalen. Hij is ook een zuivere functie van
+de tijd, dus de begintoestand rekent hem uit in plaats van op nul te beginnen:
+anders stond hij één frame na het laden ineens waar de ruis hem wilde hebben, tot
+een derde beeldhoogte in één klap.
+
+### Een zet per slag, en langer open vleugels
+
+Op de vleugelslag komt hij naar voren. Meten hoeft daar niet apart voor: voor de
+wind wordt per roerpunt al uitgerekend hoeveel van zijn beweging benedenwinds
+gaat, en dat signaal piekt tijdens de neerslag en valt weg tijdens de terugslag.
+Dezelfde derde wet die de wind verklaart, andersom gelezen.
+
+Bij de vis loopt dit precies omgekeerd, en dat is het noemen waard omdat het de
+voor de hand liggende route is. Daar stuurt een boid de snelheid aan en volgt de
+staartslag daaruit — `oscillationPower` is niets anders dan de snelheid maal een
+factor. Dat kan omdat die vis procedureel buigt over drie gewrichten. Onze draak
+brengt een gebakken clip mee, dus daar valt niets uit te sturen: de slag ligt vast
+en de stuwkracht moet er juist uit afgeleid worden.
+
+De eerste opzet was de natuurkundige: kracht bij een snelheid optellen, weerstand
+eraf, een veer die terugtrekt. Doorgerekend op een slag van anderhalve hertz gaf
+dat 0,3% beeldhoogte aan wiebel op een uitslag van 4% — hij ging een stukje
+vooruit staan en bleef daar hangen. Dat is geen kwestie van afstellen: massa met
+een veer is een laagdoorlaat van de tweede orde, en die dempt alles boven zijn
+eigen frequentie met het kwadraat van de verhouding. Zichtbaar krijgen zou
+betekenen de veer op de slagfrequentie afstemmen, en die staat in de clip en
+nergens in de code. Het signaal volgt de slag daarom rechtstreeks, met
+vertraging; dat is frequentie-onafhankelijk en de vertraging is wat het als duwen
+laat lezen in plaats van als pulseren.
 
 De gemeten slagkracht wordt afgezet tegen zijn eigen langzaam zakkende piek. Hoe
-hard een vleugelpunt over het scherm veegt hangt af van de clip, de schaal van
-het model en het aantal roerpunten, en een knop die daaraan hangt moet je bij
-elk model opnieuw zoeken. Genormaliseerd staat `thrustForce` gewoon in
-wereldeenheden.
+hard een vleugelpunt over het scherm veegt hangt af van de clip, de schaal van het
+model en het aantal roerpunten, en een knop die daaraan hangt moet je bij elk
+model opnieuw zoeken.
+
+De vleugels blijven ook langer gespreid. De draak zweeft al meer dan hij slaat —
+vier slagen in dertien seconden, zo'n 0,3 Hz — maar de clip loopt op één tempo af,
+dus het zweven en het slaan krijgen evenveel tijd. Dat is te veranderen zonder één
+bot aan te raken, door de klok van de clip ongelijkmatig te laten lopen: traag waar
+de vleugels traag bewegen, snel waar ze snel gaan. Geen nieuwe beweging dus maar
+een uitvergroting van wat de rigger er al in zette, en daarom blijft het eruitzien
+als zijn animatie. De rondgang duurt even lang, want de tijdschaal wordt zo
+genormaliseerd dat de som van 1/schaal gelijk blijft; anders zou de knop ook het
+tempo verzetten. Twee dingen komen daar gratis uit: de vleugel gaat op de slag
+harder door de lucht, dus de gemeten slagkracht piekt hoger en de zet komt
+sterker precies op het moment dat hij hoort te komen.
+
+### Een eigen laag bovenop de clip
+
+De draak brengt een rig van 221 botten mee waarvan er 216 in de clip zitten:
+`tail_01..30`, `neck_01..11`, `spine_01..08`, vleugelvliezen die aan de vingers
+hangen, plus kaak, tong, oogleden en stekels. Die vliegcyclus met de hand
+naschrijven levert iets slechters op dan er nu staat. De ketens ernaast zijn wel
+precies waar code sterker is dan een vaste clip, want daar wil je variatie en
+reactie op de scene. Dus: bovenop, niet in plaats van.
+
+Dat kan omdat de mixer elke frame de hele botstand opnieuw schrijft. Een draai
+die je daarna op een bot vermenigvuldigt stapelt niet op maar geldt precies één
+frame. Voorwaarde is alleen dat het ná de mixer en vóór `updateMatrixWorld`
+gebeurt, en dat haakje lag er al voor de roerpunten.
+
+Om welke as staat nergens in een glb — een rigger kiest die zelf. Bij deze draak
+loopt de lokale y van elk bot met de wereld-op mee, in alle drie de ketens, maar
+dat is geluk en geen wet. Het wordt daarom opgemeten uit de inverse bind
+matrices, die de ruststand geven los van waar de clip het bot nu heeft staan.
+`scripts/inspect-rig.mjs` rekent hetzelfde offline uit om een nieuw model langs
+te leggen.
+
+De staart doet iets uit zichzelf: een lopende golf van basis naar punt, met een
+trage ademhaling over de amplitude zodat het geen metronoom wordt. De nek
+reageert: de kop draait naar de cursor, verdeeld over elf schakels zodat het een
+bocht wordt en geen knik. De stekels blijven er expliciet buiten — die hangen al
+aan de keten en waaieren uit als je ze ook nog los draait. Dat is de enige
+manier waarop dit stil kan misgaan, dus het staat in een test tegen de echte 221
+botnamen.
+
+Twee getallen om te kennen. `tailSway` staat per schakel en stapelt over dertig
+schakels op, dus het zwaait veel verder dan het getal doet vermoeden: op de echte
+botlengtes doorgerekend brengt 0,02 de punt 10% van de staartlengte opzij en 0,08
+al 38%. En de kosten: veertig quaternionen per frame is 2,2 µs, oftewel 0,013%
+van een frame op 60 fps. De mixer interpoleert er al 412 kanalen naast.
 
 ### Twee dingen tegen de intuïtie in
 
@@ -234,8 +305,10 @@ dpr-plafond van 1,5.
 De rekenkundige kern is puur en heeft unit tests: het objectgedrag (doel
 volgen, drift, de lijn met roerpunten), de projectie (scherm naar uv naar vlak),
 de keuze van de roerpunten op een geanimeerd oppervlak, de asymmetrie van de
-vleugelslag en de stuwkracht die eruit volgt. Eenenzestig tests, `npm test`. Het
-beeld zelf wordt niet automatisch getest.
+vleugelslag, de stuwkracht die eruit volgt, het zweven met zijn kanteling, de
+ongelijkmatige clipklok en de procedurele laag op de botten — die laatste met het
+echte skelet als fixture, want daar is misgaan stil. Honderddertien tests,
+`npm test`. Het beeld zelf wordt niet automatisch getest.
 
 ## Wat er bewust niet in zit
 

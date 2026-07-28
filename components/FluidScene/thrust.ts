@@ -17,6 +17,14 @@ import type { ThrustConfig } from './types'
  * wind zelf verklaart, nu andersom gelezen: duwt de vleugel lucht naar
  * achteren, dan gaat de draak naar voren.
  *
+ * ## Waarom dit een signaal is en geen plek
+ *
+ * Eerst verschoof dit de draak een stukje naar voren en veerde het terug. Dat
+ * klopte toen hij stil op de oorsprong hing. Nu hij zelf vliegt is een tweede
+ * plek ernaast onzin: een slag hoort hem niet te verschuiven maar te versnellen.
+ * Wat hier uitkomt is daarom 0 tot 1 — hoeveel slag er op dit moment in zit — en
+ * `flight.ts` maakt daar met `beatBoost` snelheid van.
+ *
  * ## Waarom hier geen veer met massa staat
  *
  * De eerste opzet was de natuurkundige: kracht optellen bij een snelheid,
@@ -36,23 +44,20 @@ import type { ThrustConfig } from './types'
  * frequentie-onafhankelijk: bij welk tempo de vleugels ook slaan, de draak
  * loopt er met hetzelfde gewicht achteraan. De vertraging is wat het als duwen
  * laat lezen in plaats van als pulseren — zonder is de uitslag een kopie van de
- * slag en oogt het mechanisch. En de uitslag kan per constructie nooit voorbij
- * `thrustForce` komen, dus er is geen grens nodig om de draak in beeld te
- * houden.
+ * slag en oogt het mechanisch.
  *
  * Pure functies over getallen, zodat het gedrag te testen is zonder three.js en
  * zonder een draaiende simulatie.
  */
 export type ThrustState = {
-  /** uitslag langs de voorwaartse as, in wereldeenheden */
-  offset: number
+  /** hoeveel slag er nu in zit, 0 tot 1, met vertraging */
+  boost: number
   /**
    * Langzaam zakkende piek van de gemeten slagkracht.
    *
-   * Hiermee staat `thrustForce` in wereldeenheden in plaats van in een schaal
-   * die aan dit model en deze clip vastzit. Hoe hard een vleugelpunt over het
-   * scherm veegt hangt af van de clip, de schaal van het model en het aantal
-   * roerpunten, en een knop die daaraan hangt moet je bij elk model opnieuw
+   * Hoe hard een vleugelpunt over het scherm veegt hangt af van de clip, de
+   * schaal van het model en het aantal roerpunten. Zonder deze piek zou
+   * `beatBoost` aan al die drie hangen en moest je hem bij elk model opnieuw
    * zoeken. Afgezet tegen zijn eigen piek is het signaal 0 tot 1, wat het ook
    * is: hoeveel van deze slag er al in zit.
    */
@@ -62,7 +67,7 @@ export type ThrustState = {
 /** onder deze slagkracht valt er niets te normaliseren */
 const EPSILON = 1e-9
 
-export const createThrustState = (): ThrustState => ({ offset: 0, peak: 0 })
+export const createThrustState = (): ThrustState => ({ boost: 0, peak: 0 })
 
 /**
  * Eén stap. `push` is de opgemeten slagkracht van deze frame: het gemiddelde
@@ -81,7 +86,7 @@ export const stepThrust = (
      niet aan de framerate; een tab die net terugkomt heeft een grote delta en
      mag daar geen sprong van maken */
   const follow = 1 - Math.exp(-config.thrustResponse * delta)
-  const offset = state.offset + (stroke * config.thrustForce - state.offset) * follow
+  const boost = state.boost + (stroke - state.boost) * follow
 
-  return { offset, peak }
+  return { boost, peak }
 }

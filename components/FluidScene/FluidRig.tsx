@@ -6,6 +6,7 @@ import { useFBO } from '@react-three/drei'
 import {
   Color,
   PerspectiveCamera,
+  Quaternion,
   Scene,
   Vector2,
   Vector3,
@@ -23,8 +24,11 @@ import {
   screenToSimulationUv,
   uvToPlane,
 } from './projection'
+import { BASE_HEADING, createFlightState, stepFlight } from './flight'
 import { strokeForce, windVector } from './strokeForce'
+import { approach, lookYaw, neckWeights, tailAngle } from './pose'
 import { createThrustState, stepThrust } from './thrust'
+import type { BoneChain } from './rig'
 import { fullscreenVertexShader } from './shaders/fullscreen'
 import { paintingFragmentShader } from './shaders/painting'
 import type { FluidSceneConfig, StirSurface, Vec2 } from './types'
@@ -103,6 +107,7 @@ const FluidRig = ({ config, modelUrl, paused, pointer }: FluidRigProps) => {
 
   /* toestand die per frame verandert en geen render hoeft te veroorzaken */
   const motion = useRef(createMotionState())
+  const flight = useRef(createFlightState(config.object))
   const thrust = useRef(createThrustState())
   const reveal = useRef(0)
   const travelled = useRef<number[]>([])
@@ -110,9 +115,19 @@ const FluidRig = ({ config, modelUrl, paused, pointer }: FluidRigProps) => {
   const lastClick = useRef<number | null>(null)
   const scratch = useRef(new Vector3())
 
+  /* de procedurele laag: eigen klok, de gedempte kopdraai, en één quaternion die
+     hergebruikt wordt zodat er per frame niets gealloceerd wordt */
+  const elapsed = useRef(0)
+  const neckYaw = useRef(0)
+  const poseRotation = useRef(new Quaternion())
+  const weights = useRef<{ chain: BoneChain | null; shares: number[] }>({
+    chain: null,
+    shares: [],
+  })
+
   /* de plekken waarmee een geanimeerd model zichzelf roert; leeg voor de bol en
      voor modellen zonder animatie */
-  const stir = useRef<StirSurface>({ mesh: null, vertices: [] })
+  const stir = useRef<StirSurface>({ mesh: null, vertices: [], rig: null })
   const handleStirSurface = useCallback((surface: StirSurface) => {
     stir.current = surface
   }, [])
@@ -160,28 +175,89 @@ const FluidRig = ({ config, modelUrl, paused, pointer }: FluidRigProps) => {
       motion.current.target = uvToPlane(input.uv, halfWidth, halfHeight)
     }
 
-    if (!frozen) motion.current = stepMotion(motion.current, config.object, delta)
-
     const sim = config.simulation
 
-    /* een model dat zichzelf roert hoeft niet rond te dwalen om zichtbaar te
-       blijven, dus dat blijft in het midden staan */
     const surface = stir.current
     const anchored = surface.mesh !== null && surface.vertices.length > 0
 
-    /* een geanimeerd model staat niet stil op de oorsprong maar veert er
-       omheen: elke vleugelslag zet het naar voren, tegen de wind in. De uitslag
-       komt uit de meting van de vórige frame, want die volgt pas verderop uit
-       de roerpunten; op een frame na is dat niet te zien. */
-    const heading = planeDirection(sim.windDirection)
-    const surge = thrust.current.offset
+    /* Een geanimeerd model vliegt zelf; de bol en stille modellen volgen de
+       cursor en driften. Dat onderscheid zit hier en nergens anders. */
+    if (!frozen) {
+      if (anchored) {
+        flight.current = stepFlight(flight.current, config.object, thrust.current.boost, delta)
+      } else {
+        motion.current = stepMotion(motion.current, config.object, delta)
+      }
+    }
+
+    /* De windas kantelt mee met het lijf: zijn spoor hoort achter hém te liggen,
+       ook als hij een graad of tien overhelt. Dat werkt daarmee door in de
+       vleugelasymmetrie, de stuwkracht en de nek — die lezen alle drie deze ene
+       richting. Voor de bol blijft `windDirection` gelden; die heeft geen lijf
+       om te kantelen. */
+    const windDegrees = anchored
+      ? BASE_HEADING + flight.current.bank + 180
+      : sim.windDirection
+    const heading = planeDirection(windDegrees)
+    const place = anchored ? flight.current.position : motion.current.visible
 
     if (objectRef.current) {
-      objectRef.current.position.set(
-        anchored ? -heading.x * surge : motion.current.visible.x,
-        config.object.height,
-        anchored ? -heading.y * surge : motion.current.visible.y,
-      )
+      objectRef.current.position.set(place.x, config.object.height, place.y)
+      /* door `spin` staat het model al met zijn kop omhoog op het scherm, en dat
+         is de vaste koers, dus wat de kanteling erbij doet is meteen de draai */
+      objectRef.current.rotation.y = anchored ? (flight.current.bank * Math.PI) / 180 : 0
+    }
+
+    /* De procedurele laag bovenop de clip.
+       De mixer draait op de standaardprioriteit en heeft deze frame de hele
+       botstand al geschreven; wat we er nu op vermenigvuldigen geldt dus precies
+       één frame en stapelt niet op. Het moet wel vóór `updateMatrixWorld`, want
+       daarna is de skinning al beslist. */
+    const rig = surface.rig
+    if (rig && !frozen) {
+      elapsed.current += delta
+      const object = config.object
+      const rotation = poseRotation.current
+
+      const tail = rig.tail
+      if (tail && object.tailSway !== 0) {
+        const last = Math.max(1, tail.bones.length - 1)
+        for (let index = 0; index < tail.bones.length; index++) {
+          rotation.setFromAxisAngle(
+            tail.axes[index],
+            tailAngle(index / last, elapsed.current, object),
+          )
+          tail.bones[index].quaternion.multiply(rotation)
+        }
+      }
+
+      const neck = rig.neck
+      if (neck && object.neckFollow > 0) {
+        /* het aandeel per schakel hangt alleen aan de lengte van de keten, dus
+           dat blijft staan zolang het model niet verandert */
+        if (weights.current.chain !== neck) {
+          weights.current = { chain: neck, shares: neckWeights(neck.bones.length) }
+        }
+
+        /* waar de draak naartoe kijkt is de windas omgekeerd: de wind gaat naar
+           de staart, de kop staat er tegenover. Het doel is de cursor gezien
+           vanaf waar de draak op dit moment hangt, niet vanaf de oorsprong. */
+        const cursor = input.uv ? uvToPlane(input.uv, halfWidth, halfHeight) : null
+        const target = cursor
+          ? lookYaw(
+              { x: -heading.x, y: -heading.y },
+              { x: cursor.x - place.x, y: cursor.y - place.y },
+              object.neckFollow,
+            )
+          : 0
+
+        neckYaw.current = approach(neckYaw.current, target, object.neckRate, delta)
+
+        for (let index = 0; index < neck.bones.length; index++) {
+          rotation.setFromAxisAngle(neck.axes[index], neckYaw.current * weights.current.shares[index])
+          neck.bones[index].quaternion.multiply(rotation)
+        }
+      }
     }
 
     /* penseel 0 is de cursor, daarna de punten langs het object */
@@ -264,7 +340,7 @@ const FluidRig = ({ config, modelUrl, paused, pointer }: FluidRigProps) => {
          leest getVertexPosition de botstand van het vorige frame */
       objectScene.updateMatrixWorld(true)
 
-      const wind = windVector(sim.windDirection, ratio)
+      const wind = windVector(windDegrees, ratio)
       let downwind = 0
 
       for (let index = 0; index < config.object.stirPoints; index++) {
