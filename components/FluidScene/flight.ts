@@ -15,16 +15,34 @@ import type { FlightConfig, Vec2 } from './types'
  * gaat ondersteboven het beeld door, en de camera hangt niet meer boven een
  * draak maar boven een baan.
  *
- * Wat het wél moet zijn zit ertussenin. De kop staat vast naar voren, en zijn
- * plek zweeft daar subtiel omheen: zijwaarts het meest, want dat is wat een
- * vleugel doet als hij een luchtstroom pakt, en naar voren en achteren wat
- * minder. Het lijf kantelt daar een graad of tien in mee, en dát is wat het
- * zweven van glijden onderscheidt: een vleugel die naar rechts draagt heeft zijn
- * neus ook een beetje naar rechts. En op de vleugelslag komt hij naar voren.
+ * Wat het wél moet zijn zit ertussenin. De kop staat vast naar voren, en de twee
+ * assen doen los van elkaar iets anders:
  *
- * De plek komt uit ruis en niet uit sinussen. Een lissajous heeft een periode,
- * en over een minuut kijken zie je die terugkomen — precies het patroon dat we
- * met een procedurele laag juist proberen weg te halen.
+ *   Zijwaarts volgt hij de cursor. Niet er meteen op staan maar er met gewicht
+ *   naartoe, want het is dat achterlopen dat de kanteling voedt. Staat de cursor
+ *   niet in beeld, dan is het doel het midden.
+ *
+ *   Naar voren en achteren volgt hij de cursor ook, maar de twee richtingen zijn
+ *   met opzet niet gelijk. Vooruit kost slagen: hij komt alleen naar voren als de
+ *   vleugels werken, in de zetjes die uit `boost` komen. Achteruit kost niets, dus
+ *   dan zweeft hij met de vleugels open terug, traag en gelijkmatig.
+ *
+ * Die asymmetrie is het punt. Een vogel klapwiekt niet om achteruit te zakken —
+ * die spreidt zijn vleugels en laat zich dragen. Het gevolg is dat de clip niet
+ * los van de vlucht loopt: `beating` zegt of hij er slagen voor nodig heeft, en
+ * daar wordt de klok van de animatie mee gestuurd. Heeft hij ze niet nodig, dan
+ * kruipt de clip naar zijn zweefstand en blijft daar hangen tot je vóór hem komt.
+ * En dan valt het rond: geen slagen betekent geen gemeten slagkracht, dus ook
+ * geen `boost`, dus ook geen zet naar voren.
+ *
+ * Het lijf kantelt mee met hoe hard hij zijwaarts gaat, en dát is wat het zweven
+ * van schuiven onderscheidt: een vleugel die naar rechts draagt heeft zijn neus
+ * ook naar rechts. Zonder die kanteling wijst het lijf de ene kant op terwijl de
+ * beweging de andere kant op gaat, en dan leest het als een sprite.
+ *
+ * De ruis is waarde-ruis en geen som van sinussen. Een lissajous heeft een
+ * periode, en over een minuut kijken zie je die terugkomen — precies het patroon
+ * dat we met een procedurele laag juist proberen weg te halen.
  *
  * Pure functies over getallen, zodat het gedrag te testen is zonder three.js.
  */
@@ -33,6 +51,13 @@ export type FlightState = {
   position: Vec2
   /** hoeveel het lijf meekantelt met het zweven, in graden om de vaste koers */
   bank: number
+  /**
+   * Of de vleugels werken, 0 tot 1, gedempt.
+   *
+   * Hier hangt de klok van de animatieclip aan: op 0 kruipt die naar zijn
+   * zweefstand en blijft daar hangen, op 1 loopt hij zijn slagen af.
+   */
+  beating: number
   /** verstreken tijd, voedt de ruis */
   elapsed: number
 }
@@ -63,37 +88,23 @@ export const noise = (x: number): number => {
   return hash(whole) * (1 - blend) + hash(whole + 1) * blend
 }
 
-/**
- * De steilste helling die `noise` kan hebben, als deel van zijn bereik per
- * eenheid x. De smoothstep haalt zijn maximum halverwege een cel, op 1,5.
- *
- * Hiermee staat `bankAngle` gewoon in graden. Zonder zou het aan de driftstraal
- * en het driftempo hangen, en dan moet je hem bij elke wijziging opnieuw zoeken.
- */
-const NOISE_SLOPE = 1.5
-
 /** ruis van -1 tot 1, met een eigen plek in het veld zodat de assen verschillen */
 const swing = (elapsed: number, rate: number, offset: number) =>
   noise(elapsed * rate + offset) * 2 - 1
 
 /**
- * Waar hij op een moment hangt. De plek is een zuivere functie van de tijd, dus
- * de begintoestand kan hem gewoon uitrekenen in plaats van op nul te beginnen.
- *
- * Dat scheelt een sprong. Startte hij op de oorsprong, dan stond hij één frame
- * later ineens waar de ruis hem wilde hebben — tot een derde beeldhoogte in één
- * klap — en die schijnsnelheid sloeg de kanteling meteen op zijn eindstand.
+ * Het kleine zweven dat er altijd overheen ligt, zodat hij ook op zijn plek nooit
+ * helemaal stilhangt. Een zuivere functie van de tijd, dus de begintoestand kan
+ * hem uitrekenen in plaats van op nul te beginnen — anders stond hij één frame na
+ * het laden ineens waar de ruis hem wilde hebben.
  */
-const placeAt = (elapsed: number, config: FlightConfig, boost: number): Vec2 => ({
-  x: swing(elapsed, config.driftRate, 0) * config.driftSide,
-  /* naar voren is op het scherm omhoog, en `y` is de z-as die daar andersom
-     loopt, dus de zet van de slag gaat er met een minteken af */
-  y: swing(elapsed, config.driftRate * 0.63, 41.7) * config.driftAhead - boost * config.beatSurge,
-})
+const hover = (elapsed: number, config: FlightConfig): number =>
+  swing(elapsed, config.driftRate, 41.7) * config.driftAhead
 
 export const createFlightState = (config: FlightConfig): FlightState => ({
-  position: placeAt(0, config, 0),
+  position: { x: 0, y: hover(0, config) },
   bank: 0,
+  beating: 0,
   elapsed: 0,
 })
 
@@ -104,33 +115,75 @@ export const wrapAngle = (degrees: number): number => {
 }
 
 /**
- * Eén stap. `boost` is de zet van de vleugelslag, 0 tot 1: op de slag komt hij
- * naar voren, ertussenin zakt hij weer terug.
+ * Eén stap.
+ *
+ * `boost` is hoeveel slag er nu in de vleugels zit, 0 tot 1. `cursor` is waar de
+ * cursor op het vlak staat, of null als die niet in beeld is — dan is het midden
+ * het doel. `reach` is hoe ver hij mag komen, zijwaarts en naar voren, in
+ * dezelfde eenheden.
  */
 export const stepFlight = (
   state: FlightState,
   config: FlightConfig,
   boost: number,
+  cursor: Vec2 | null,
+  reach: Vec2,
   delta: number,
 ): FlightState => {
   const elapsed = state.elapsed + delta
 
-  /* zijwaarts het meest, dat is het zweven zelf. De twee assen lezen de ruis op
-     een eigen plek en op een eigen tempo, anders lopen ze samen en zwabbert hij
-     over één diagonaal heen en weer. */
-  const position = placeAt(elapsed, config, boost)
+  /* Het doel blijft binnen zijn bereik, ook als de cursor tegen de rand van het
+     scherm staat: anders vliegt hij het beeld half uit om erbij te kunnen.
+     `reach` komt van de aanroeper omdat het aan de breedte van het venster
+     hangt, en die kent dit bestand niet. */
+  const wanted = Math.max(-reach.x, Math.min(reach.x, cursor?.x ?? 0))
 
-  /* Het lijf kantelt mee met hoe hard hij zijwaarts zweeft. Afgezet tegen de
-     steilste helling die de ruis kan hebben, zodat `bankAngle` in graden staat
-     en niet meebeweegt met de driftstraal. Naar rechts zwevend hoort de neus
-     ook naar rechts, en rechtsom is op het scherm de negatieve kant op. */
-  const fastest = config.driftSide * 2 * config.driftRate * NOISE_SLOPE
-  const sideways = fastest > 1e-9 ? (position.x - state.position.x) / delta / fastest : 0
+  /* er met gewicht naartoe en niet erop springen. Dat achterlopen is niet alleen
+     mooier, het is ook wat de kanteling voedt: zonder snelheidsverschil is er
+     niets om op te kantelen. */
+  const x = state.position.x + (wanted - state.position.x) * (1 - Math.exp(-config.followRate * delta))
+
+  /* Naar voren en achteren, en hier lopen de twee richtingen uiteen.
+
+     Vooruit is op het scherm omhoog, en `y` is de z-as die daar andersom loopt,
+     dus vooruit betekent dat `y` moet dalen. Dat gaat alleen met slagen: de
+     afgelegde weg is `boost` maal de stuwkracht, dus tussen twee slagen door
+     schuift hij niet op. Achteruit is zweven en kost geen slag, dus dat gaat op
+     een eigen, trage snelheid.
+
+     De ruis ligt er los overheen zodat hij op zijn plek nooit stilhangt. Het doel
+     is de plek zonder die ruis, anders jaagt hij zijn eigen gewiebel achterna. */
+  const wantedAhead = Math.max(-reach.y, Math.min(reach.y, cursor?.y ?? 0))
+  const settled = state.position.y - hover(state.elapsed, config)
+  const gap = wantedAhead - settled
+
+  /* een dode zone rond het doel, anders klappert hij tussen slaan en zweven */
+  const needsForward = gap < -config.arriveGap
+
+  const travel = needsForward
+    ? Math.max(-boost * config.beatThrust * delta, gap)
+    : Math.min(config.glideBack * delta, Math.max(0, gap))
+
+  /* zolang hij vooruit moet blijven de vleugels werken, daarna zakt het weg en
+     kruipt de clip naar zijn zweefstand */
+  const beating =
+    state.beating +
+    ((needsForward ? 1 : 0) - state.beating) * (1 - Math.exp(-config.beatRate * delta))
+
+  const position = { x, y: settled + travel + hover(elapsed, config) }
+
+  /* Het lijf kantelt mee met hoe hard hij zijwaarts gaat. Afgezet tegen de
+     snelheid van een besliste haal — een sprong over zijn halve bereik — zodat
+     `bankAngle` in graden staat en niet meebeweegt met het volgtempo. Naar
+     rechts gaand hoort de neus ook naar rechts, en rechtsom is op het scherm de
+     negatieve kant op. */
+  const decisive = config.followRate * reach.x
+  const sideways = decisive > 1e-9 ? (position.x - state.position.x) / delta / decisive : 0
   const target = Math.max(-1, Math.min(1, sideways)) * -config.bankAngle
 
   /* er met vertraging naartoe: een lijf dat meteen op zijn eindstand staat
      kantelt niet, dat klapt */
   const bank = state.bank + (target - state.bank) * (1 - Math.exp(-config.bankRate * delta))
 
-  return { position, bank, elapsed }
+  return { position, bank, beating, elapsed }
 }

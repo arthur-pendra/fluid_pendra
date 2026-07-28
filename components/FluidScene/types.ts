@@ -27,18 +27,44 @@ export type PointMotion = {
  * die hebben geen kop om vooruit te zetten.
  */
 export type FlightConfig = {
-  /** hoe ver hij zijwaarts wegzweeft, in wereldeenheden. Dit is het zweven
-      zelf, dus dit is de grootste van de twee. Het zichtbare vlak is er twee
-      hoog, dus 0,3 is bijna een derde van de beeldhoogte naar elke kant. */
-  driftSide: number
-  /** hoe ver hij naar voren en achteren zweeft; kleiner, anders wordt het
-      dobberen in plaats van dragen */
+  /** hoe ver hij zijwaarts van het midden gaat, als deel van de halve
+      beeldbreedte. Een deel en geen wereldmaat, want anders gebruikt hij op een
+      breed scherm maar een derde van de breedte en op een smal scherm te veel.
+      De cursor wijst de plek aan maar wordt hierop afgekapt, anders vliegt hij
+      het beeld half uit om bij een cursor tegen de rand te komen. */
+  reachSide: number
+  /** hoe snel hij de cursor zijwaarts volgt, per seconde. Laag geeft gewicht en
+      laat hem achterlopen, en dat achterlopen is wat de kanteling voedt; hoog
+      plakt hem aan de cursor en dan kantelt hij nauwelijks meer. */
+  followRate: number
+  /** hoe ver hij naar voren en achteren gaat, als deel van de halve
+      beeldhoogte; zelfde reden als `reachSide` */
+  reachAhead: number
+  /**
+   * Hoe hard een volle vleugelslag hem vooruit brengt, in wereldeenheden per
+   * seconde. Vooruit gaat alléén hiermee: tussen twee slagen door schuift hij
+   * niet op, en dat is waarom de zetjes te zien zijn.
+   */
+  beatThrust: number
+  /**
+   * Hoe snel hij achteruit zweeft, in wereldeenheden per seconde. Dit kost geen
+   * slag — een vogel klapwiekt niet om achteruit te zakken, die laat zich
+   * dragen — dus dit hoort traag en gelijkmatig te zijn, in tegenstelling tot
+   * het schoksgewijze vooruit.
+   */
+  glideBack: number
+  /** hoe dicht bij het doel hij het slaan staakt, in wereldeenheden. Zonder deze
+      dode zone klappert hij tussen slaan en zweven. */
+  arriveGap: number
+  /** hoe snel het slaan aan- en uitgaat, per seconde. Laag laat de vleugels
+      nazwaaien na aankomst; hoog schakelt hard en dan zie je de omslag. */
+  beatRate: number
+  /** hoeveel er van het zweven overblijft als hij op zijn plek hangt, in
+      wereldeenheden. Ligt los over het volgen heen zodat hij nooit stilstaat. */
   driftAhead: number
   /** hoe snel dat zweven verloopt. Laag is traag en dragend; hoog wordt
-      onrustig en dan gaat het weer op schuiven lijken. */
+      onrustig. */
   driftRate: number
-  /** hoe ver de vleugelslag hem naar voren zet, in wereldeenheden */
-  beatSurge: number
   /** hoeveel het lijf meekantelt met het zijwaarts zweven, in graden op zijn
       snelst. Dit is wat zweven van glijden onderscheidt: een vleugel die naar
       rechts draagt heeft zijn neus ook een beetje naar rechts. Te veel en hij
@@ -67,6 +93,16 @@ export type PoseConfig = {
   /** hoe snel de kop die draai maakt, per seconde. Laag is loom en kijkt na,
       hoog plakt de kop aan de cursor en dan oogt het als een machine. */
   neckRate: number
+  /**
+   * Hoe ver de vleugels bewegen terwijl hij zweeft, in radialen aan de schouder.
+   *
+   * In de zweefstand staat de clip stil, en een stilstaande vleugel ziet er dood
+   * uit. Een zwevende vogel corrigeert continu op wat de lucht doet, en dit is
+   * die correctie. Klein houden: dit is geen slag maar een aanpassing.
+   */
+  soarLift: number
+  /** hoe traag dat verloopt. Laag is dragend; hoog gaat op fladderen lijken. */
+  soarRate: number
 }
 
 /**
@@ -92,6 +128,20 @@ export type ThrustConfig = {
    * verdeling erbinnen verschuift.
    */
   glideHold: number
+  /**
+   * Over welk deel van de rondgang de clip afremt naar de zweefstand als de
+   * vleugels niet hoeven te werken, zie beat.ts.
+   *
+   * De slag zelf houdt zijn eigen tempo: hij maakt de slag waar hij in zit gewoon
+   * af en komt pas in de laatste aanloop tot stilstand, met de vleugels gespreid.
+   * De hele clip vertragen zag eruit als doorklapwieken in slow motion, en dat is
+   * niet hetzelfde als ophouden met slaan.
+   *
+   * Dit is meteen de tijdconstante van dat afremmen, als deel van de rondgang:
+   * op 0,08 van een rondgang van 3,3 seconde staat hij binnen een kwart seconde
+   * stil. Hoger en je ziet hem langzaam uitlopen.
+   */
+  soarBrake: number
 }
 
 export type ObjectConfig = ThrustConfig &

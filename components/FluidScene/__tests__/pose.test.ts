@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { approach, lookYaw, neckWeights, tailAngle } from '../pose'
+import { approach, lookYaw, neckWeights, soarAngle, tailAngle } from '../pose'
 import type { PoseConfig } from '../types'
 
 const config: PoseConfig = {
@@ -8,6 +8,8 @@ const config: PoseConfig = {
   tailWave: 3.2,
   neckFollow: 0.45,
   neckRate: 1.4,
+  soarLift: 0.09,
+  soarRate: 0.35,
 }
 
 /* het vlak waar het object op zweeft: x is rechts op het scherm, y is de z-as
@@ -138,5 +140,58 @@ describe('approach', () => {
 
   it('blijft staan als het doel al bereikt is', () => {
     expect(approach(0.45, 0.45, 1.4, 1 / 60)).toBeCloseTo(0.45, 9)
+  })
+})
+
+describe('soarAngle', () => {
+  const sample = (t: number, seed: number) =>
+    Array.from({ length: 2400 }, (_, frame) => soarAngle(t, frame / 60, seed, config))
+
+  it('beweegt, want een stilstaande vleugel ziet er dood uit', () => {
+    const bereik = sample(0, 0)
+    expect(Math.max(...bereik) - Math.min(...bereik)).toBeGreaterThan(config.soarLift * 0.5)
+  })
+
+  it('blijft binnen de ingestelde uitslag', () => {
+    for (const t of [0, 0.5, 1]) {
+      for (const angle of sample(t, 0)) {
+        expect(Math.abs(angle)).toBeLessThanOrEqual(config.soarLift + 1e-9)
+      }
+    }
+  })
+
+  it('laat de schouder meer doen dan de punt', () => {
+    /* een vleugel draagt bij de schouder; andersom lijkt het of alleen het
+       puntje trilt */
+    const schouder = sample(0, 0)
+    const punt = sample(1, 0)
+    const bereik = (values: number[]) => Math.max(...values) - Math.min(...values)
+
+    expect(bereik(schouder)).toBeGreaterThan(bereik(punt))
+  })
+
+  it('laat links en rechts nooit gelijk lopen', () => {
+    /* symmetrie is precies wat het levenloos maakt */
+    const links = sample(0, 0)
+    const rechts = sample(0, 31.7)
+    const verschil = links.reduce((sum, value, index) => sum + Math.abs(value - rechts[index]), 0)
+
+    expect(verschil / links.length).toBeGreaterThan(config.soarLift * 0.2)
+  })
+
+  it('loopt vloeiend, zonder sprongen tussen twee frames', () => {
+    const track = sample(0.5, 0)
+    let biggest = 0
+    for (let index = 1; index < track.length; index++) {
+      biggest = Math.max(biggest, Math.abs(track[index] - track[index - 1]))
+    }
+    expect(biggest).toBeLessThan(config.soarLift * 0.05)
+  })
+
+  it('staat stil als de knop op nul staat', () => {
+    const uit = { ...config, soarLift: 0 }
+    for (let frame = 0; frame < 600; frame++) {
+      expect(soarAngle(0.5, frame / 60, 0, uit)).toBeCloseTo(0, 12)
+    }
   })
 })

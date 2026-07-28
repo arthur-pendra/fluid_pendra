@@ -26,7 +26,7 @@ import {
 } from './projection'
 import { BASE_HEADING, createFlightState, stepFlight } from './flight'
 import { strokeForce, windVector } from './strokeForce'
-import { approach, lookYaw, neckWeights, tailAngle } from './pose'
+import { approach, lookYaw, neckWeights, soarAngle, tailAngle } from './pose'
 import { createThrustState, stepThrust } from './thrust'
 import type { BoneChain } from './rig'
 import { fullscreenVertexShader } from './shaders/fullscreen'
@@ -119,6 +119,9 @@ const FluidRig = ({ config, modelUrl, paused, pointer }: FluidRigProps) => {
      hergebruikt wordt zodat er per frame niets gealloceerd wordt */
   const elapsed = useRef(0)
   const neckYaw = useRef(0)
+  /* of de vleugels moeten werken; gaat als ref naar het model zodat het sturen
+     van de clipklok geen render kost */
+  const beating = useRef(1)
   const poseRotation = useRef(new Quaternion())
   const weights = useRef<{ chain: BoneChain | null; shares: number[] }>({
     chain: null,
@@ -184,7 +187,20 @@ const FluidRig = ({ config, modelUrl, paused, pointer }: FluidRigProps) => {
        cursor en driften. Dat onderscheid zit hier en nergens anders. */
     if (!frozen) {
       if (anchored) {
-        flight.current = stepFlight(flight.current, config.object, thrust.current.boost, delta)
+        /* zijwaarts volgt hij de cursor; staat die niet in beeld, dan is het
+           midden het doel. Naar voren en achteren doet de cursor (nog) niets. */
+        const cursor = input.uv ? uvToPlane(input.uv, halfWidth, halfHeight) : null
+        flight.current = stepFlight(
+          flight.current,
+          config.object,
+          thrust.current.boost,
+          cursor,
+          {
+            x: config.object.reachSide * halfWidth,
+            y: config.object.reachAhead * halfHeight,
+          },
+          delta,
+        )
       } else {
         motion.current = stepMotion(motion.current, config.object, delta)
       }
@@ -208,6 +224,8 @@ const FluidRig = ({ config, modelUrl, paused, pointer }: FluidRigProps) => {
       objectRef.current.rotation.y = anchored ? (flight.current.bank * Math.PI) / 180 : 0
     }
 
+    beating.current = anchored ? flight.current.beating : 1
+
     /* De procedurele laag bovenop de clip.
        De mixer draait op de standaardprioriteit en heeft deze frame de hele
        botstand al geschreven; wat we er nu op vermenigvuldigen geldt dus precies
@@ -229,6 +247,25 @@ const FluidRig = ({ config, modelUrl, paused, pointer }: FluidRigProps) => {
           )
           tail.bones[index].quaternion.multiply(rotation)
         }
+      }
+
+      /* De vleugels in de zweefstand. De clip staat daar stil en een stilstaande
+         vleugel ziet er dood uit, dus hier komt een trage correctie overheen.
+         Geschaald op hoe weinig hij slaat: tijdens het slaan doet de clip het
+         werk en zou dit er alleen tegenin gaan. Per kant een eigen trekking uit
+         de ruis, want symmetrie is precies wat het levenloos maakt. */
+      const soaring = 1 - flight.current.beating
+      if (soaring > 0.01 && object.soarLift > 0) {
+        rig.wings.forEach((wing, side) => {
+          const last = Math.max(1, wing.bones.length - 1)
+          for (let index = 0; index < wing.bones.length; index++) {
+            rotation.setFromAxisAngle(
+              wing.axes[index],
+              soarAngle(index / last, elapsed.current, side * 31.7, object) * soaring,
+            )
+            wing.bones[index].quaternion.multiply(rotation)
+          }
+        })
       }
 
       const neck = rig.neck
@@ -414,6 +451,7 @@ const FluidRig = ({ config, modelUrl, paused, pointer }: FluidRigProps) => {
           config={config.object}
           modelUrl={modelUrl}
           frozen={frozen}
+          beating={beating}
           onStirSurface={handleStirSurface}
         />,
         objectScene,

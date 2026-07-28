@@ -37,6 +37,8 @@ export type BoneChain = {
 export type ModelRig = {
   tail: BoneChain | null
   neck: BoneChain | null
+  /** de twee vleugels, van schouder naar hand; voor de zweeflaag */
+  wings: BoneChain[]
 }
 
 /** het stukje `Bone` dat `orderChain` nodig heeft, zodat die zonder three te testen is */
@@ -91,6 +93,9 @@ export const orderChain = <T extends { name: string; parent: T | null; children:
 /** de as waar de camera langs kijkt; een draai hierom leest als zwaaien */
 const UP = new Vector3(0, 1, 0)
 
+/** de botten van een vleugel, van binnen naar buiten */
+const WING_BONES = ['shoulder', 'forearm', 'hand']
+
 const findChain = (mesh: SkinnedMesh, prefix: string): BoneChain | null => {
   const { bones, boneInverses } = mesh.skeleton
   const chain = orderChain(bones as unknown as ChainNode[], prefix)
@@ -112,6 +117,79 @@ const findChain = (mesh: SkinnedMesh, prefix: string): BoneChain | null => {
   return { bones: order.map((index) => bones[index]), axes }
 }
 
+/**
+ * De ruststand van een bot, uit de inverse bind matrix: die zet van de ruimte van
+ * de mesh naar die van het bot, dus andersom is het bot zelf.
+ */
+const restRotation = (mesh: SkinnedMesh, index: number) =>
+  new Quaternion().setFromRotationMatrix(
+    new Matrix4().copy(mesh.skeleton.boneInverses[index]).invert(),
+  )
+
+const restPosition = (mesh: SkinnedMesh, index: number) =>
+  new Vector3().setFromMatrixPosition(
+    new Matrix4().copy(mesh.skeleton.boneInverses[index]).invert(),
+  )
+
+/**
+ * Een bot bij naam, met de nummering die three.js eraan plakt.
+ *
+ * Op het naampad na exact, en dan moet er een cijfer volgen of niets. Zonder die
+ * eis pakt `l_shoulder` ook `l_shoulderTwist` mee, want die begint er net zo goed
+ * mee — en dan draait de zweeflaag een bot mee die er niet bij hoort.
+ */
+export const isBone = (name: string, exact: string): boolean =>
+  name === exact || (name.startsWith(exact) && /\d/.test(name.charAt(exact.length)))
+
+const indexOfBone = (mesh: SkinnedMesh, name: string) =>
+  mesh.skeleton.bones.findIndex((bone) => isBone(bone.name, name))
+
+/**
+ * De lijfas in de ruststand: van de staartwortel naar de nekwortel.
+ *
+ * Daar draait een vleugel omheen als hij op en neer gaat. Opgemeten en niet
+ * ingetypt, om dezelfde reden als bij de ketens: welke as dat is kiest de rigger.
+ * Bij deze draak is het de wereld-z, en de lokale as van elk vleugelbot ligt daar
+ * netjes mee op één lijn — maar dat is geluk en geen wet.
+ *
+ * De twee uiteinden komen uit de ketens die al gevonden zijn en niet uit een
+ * naamzoekopdracht, want die ketens weten zelf al waar hun wortel zit.
+ */
+const bodyAxis = (mesh: SkinnedMesh, tail: BoneChain | null, neck: BoneChain | null): Vector3 => {
+  const fallback = new Vector3(0, 0, 1)
+  if (!tail || !neck) return fallback
+
+  const at = (bone: Bone) => {
+    const index = mesh.skeleton.bones.indexOf(bone)
+    return index >= 0 ? restPosition(mesh, index) : null
+  }
+
+  const from = at(tail.bones[0])
+  const to = at(neck.bones[0])
+  if (!from || !to) return fallback
+
+  const along = to.sub(from)
+  return along.lengthSq() > 1e-12 ? along.normalize() : fallback
+}
+
+/**
+ * Eén vleugel: schouder, onderarm, hand, met per bot de lokale as waar een draai
+ * omheen de vleugel doet stijgen of dalen.
+ */
+const findWing = (mesh: SkinnedMesh, side: string, axis: Vector3): BoneChain | null => {
+  const found = WING_BONES.map((part) => indexOfBone(mesh, `${side}_${part}`)).filter(
+    (index) => index >= 0,
+  )
+  if (found.length < 2) return null
+
+  return {
+    bones: found.map((index) => mesh.skeleton.bones[index]),
+    axes: found.map((index) =>
+      axis.clone().applyQuaternion(restRotation(mesh, index).invert()).normalize(),
+    ),
+  }
+}
+
 const findSkinnedMesh = (root: import('three').Object3D): SkinnedMesh | null => {
   let found: SkinnedMesh | null = null
   root.traverse((child) => {
@@ -122,10 +200,17 @@ const findSkinnedMesh = (root: import('three').Object3D): SkinnedMesh | null => 
 
 export const readRig = (root: import('three').Object3D): ModelRig => {
   const mesh = findSkinnedMesh(root)
-  if (!mesh) return { tail: null, neck: null }
+  if (!mesh) return { tail: null, neck: null, wings: [] }
+
+  const tail = findChain(mesh, 'tail')
+  const neck = findChain(mesh, 'neck')
+  const axis = bodyAxis(mesh, tail, neck)
 
   return {
-    tail: findChain(mesh, 'tail'),
-    neck: findChain(mesh, 'neck'),
+    tail,
+    neck,
+    wings: ['l', 'r']
+      .map((side) => findWing(mesh, side, axis))
+      .filter((wing): wing is BoneChain => wing !== null),
   }
 }

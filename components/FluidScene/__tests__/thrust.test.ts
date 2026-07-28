@@ -6,6 +6,7 @@ const config: ThrustConfig = {
   thrustResponse: 6,
   thrustAdapt: 0.3,
   glideHold: 0.9,
+  soarBrake: 0.22,
 }
 
 const STEP = 1 / 60

@@ -16,7 +16,7 @@ import {
   type SkinnedMesh,
 } from 'three'
 import { SkeletonUtils } from 'three/examples/jsm/Addons.js'
-import { beatProfile, sampleProfile } from './beat'
+import { beatProfile, clipRate, soarPhases } from './beat'
 import { readRig } from './rig'
 import { pickStirPoints } from './stirSurface'
 import type { ObjectConfig, PointMotion, StirSurface } from './types'
@@ -205,10 +205,12 @@ type ModelProps = {
   url: string
   config: ObjectConfig
   frozen: boolean
+  /** of de vleugels moeten werken, 0 tot 1; stuurt de klok van de clip aan */
+  beating?: React.RefObject<number>
   onStirSurface: (surface: StirSurface) => void
 }
 
-const Model = ({ url, config, frozen, onStirSurface }: ModelProps) => {
+const Model = ({ url, config, frozen, beating, onStirSurface }: ModelProps) => {
   /* draco staat uit: het model is met meshopt gecomprimeerd, en die decoder zit
      in de bundel in plaats van achter een CDN */
   const { scene, animations } = useGLTF(url, false)
@@ -258,16 +260,29 @@ const Model = ({ url, config, frozen, onStirSurface }: ModelProps) => {
     }
   }, [actions, names])
 
-  /* De klok van de clip, ongelijkmatig: langzaam waar de vleugels langzaam
-     bewegen, snel waar ze snel bewegen. Zo blijven de vleugels langer gespreid
-     en gaat hij er in één keer doorheen, zonder dat er één bot verandert. Zie
-     beat.ts; op glideHold 0 valt het terug op een gelijkmatige klok.
+  /* De klok van de clip, en die loopt op twee manieren ongelijkmatig.
+
+     Binnen een slag: langzaam waar de vleugels langzaam bewegen, snel waar ze
+     snel bewegen. Zo blijven de vleugels langer gespreid en gaat hij er in één
+     keer doorheen, zonder dat er één bot verandert. Zie beat.ts; op glideHold 0
+     valt dat terug op een gelijkmatige klok.
+
+     Over de slagen heen: `beating` zegt of hij de vleugels nodig heeft om
+     vooruit te komen. De slag houdt daarbij zijn eigen tempo — de hele clip
+     vertragen zag eruit als doorklapwieken in slow motion, en dat is niet
+     hetzelfde als ophouden met slaan. Hoeft hij niet vooruit, dan maakt hij de
+     slag waar hij in zit gewoon af en komt pas in de laatste aanloop tot
+     stilstand, in de eerstvolgende stand waar de vleugels het verst gespreid
+     staan — er zijn er vier in deze clip, één per slag, dus hij wacht hooguit
+     één slag. Gaat het slaan weer aan, dan loopt hij vanaf diezelfde plek
+     verder.
 
      Pauze en prefers-reduced-motion zetten de animatie helemaal stil. */
   const profile = useMemo(
     () => beatProfile(prepared.speeds, config.glideHold),
     [prepared.speeds, config.glideHold],
   )
+  const soars = useMemo(() => soarPhases(prepared.speeds), [prepared.speeds])
 
   useFrame(() => {
     if (frozen) {
@@ -276,8 +291,18 @@ const Model = ({ url, config, frozen, onStirSurface }: ModelProps) => {
     }
     const action = names[0] ? actions[names[0]] : null
     const duration = action?.getClip().duration ?? 0
-    mixer.timeScale =
-      action && duration > 0 ? sampleProfile(profile, action.time / duration) : 1
+    if (!action || duration <= 0) {
+      mixer.timeScale = 1
+      return
+    }
+
+    mixer.timeScale = clipRate(
+      profile,
+      soars,
+      action.time / duration,
+      beating?.current ?? 1,
+      config.soarBrake,
+    )
   })
 
   useEffect(() => {
@@ -309,11 +334,12 @@ type FloatingObjectProps = {
   config: ObjectConfig
   modelUrl?: string
   frozen: boolean
+  beating?: React.RefObject<number>
   onStirSurface: (surface: StirSurface) => void
 }
 
 const FloatingObject = forwardRef<Group, FloatingObjectProps>(
-  ({ config, modelUrl, frozen, onStirSurface }, ref) => {
+  ({ config, modelUrl, frozen, beating, onStirSurface }, ref) => {
     const fallback = <Sphere config={config} />
 
     return (
@@ -325,6 +351,7 @@ const FloatingObject = forwardRef<Group, FloatingObjectProps>(
                 url={modelUrl}
                 config={config}
                 frozen={frozen}
+                beating={beating}
                 onStirSurface={onStirSurface}
               />
             </Suspense>

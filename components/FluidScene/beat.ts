@@ -17,6 +17,24 @@
  * precies op het moment dat hij hoort te komen. En de totale rondgang duurt even
  * lang als eerst, want de tijdschaal wordt zo genormaliseerd dat de clip er
  * netto even lang over doet — anders zou de knop ook het tempo verzetten.
+ *
+ * ## Overgaan naar zweven
+ *
+ * Hoeft hij niet vooruit, dan moeten de vleugels gespreid blijven. De eerste
+ * opzet vertraagde daarvoor de hele clip, en dat zag er verkeerd uit: je zag een
+ * draak die in slow motion doorklapwiekte in plaats van een die ophield met
+ * slaan. De slag hoort zijn eigen tempo te houden.
+ *
+ * Wat er wél moet gebeuren is dat hij de slag waar hij in zit gewoon afmaakt en
+ * daarna tot stilstand komt met de vleugels gespreid. Zulke standen zijn te
+ * vinden: het zijn de momenten waarop het oppervlak het minst beweegt, en dat is
+ * al opgemeten.
+ *
+ * Het zijn er meerdere, en dat is het hele punt. Deze clip heeft vier slagen, dus
+ * ook vier zweefstanden. Met maar één ervan als mikpunt moest hij soms drie
+ * slagen door voordat hij mocht stoppen — en dat is precies hoe het eruitzag:
+ * vleugels die maar blijven doorgaan terwijl je je muis al lang achter hem hebt.
+ * Hij mikt daarom op de eerstvolgende, en wacht dus hooguit één slag.
  */
 
 /**
@@ -63,4 +81,84 @@ export const sampleProfile = (profile: number[], phase: number): number => {
   const next = profile[(index + 1) % profile.length]
 
   return here + (next - here) * blend
+}
+
+/**
+ * Onder welk deel van de gemiddelde beweging een moment als zweven telt.
+ *
+ * Ruim onder 1, want het gaat om de dalen tussen de slagen. Hoger en er valt
+ * ook een stuk van de op- en afgaande slag onder, en dan stopt hij met zijn
+ * vleugels halverwege.
+ */
+const SOAR_LEVEL = 0.6
+
+/**
+ * De plekken in de clip waar de vleugels het verst gespreid staan: de standen
+ * waarin hij tot stilstand mag komen.
+ *
+ * Dat zijn de bemonsteringspunten waar het oppervlak duidelijk trager beweegt
+ * dan gemiddeld. Een vogel die zich laat dragen hangt precies daar, en het is de
+ * enige soort stand waar stilstaan er niet uitziet als een bevroren animatie.
+ *
+ * Niet op lokale minima gezocht, en dat is met opzet. Het zweefdeel van een slag
+ * is een plateau, dus dan telt elk punt erop mee als dal en heb je er twintig in
+ * plaats van vier. Dat is ook niet erg — elk traag moment is een prima plek om te
+ * blijven hangen, en meer plekken betekent korter wachten — maar dan kan de test
+ * ze net zo goed als drempelwaarde beschrijven, want dát is wat het is.
+ */
+export const soarPhases = (speeds: number[]): number[] => {
+  if (speeds.length === 0) return []
+
+  const mean = speeds.reduce((sum, value) => sum + value, 0) / speeds.length
+  if (mean <= 0) return [0.5]
+
+  const found: number[] = []
+  for (let index = 0; index < speeds.length; index++) {
+    /* midden op het bemonsteringsvak, want het monster dekt het stuk erna */
+    if (speeds[index] < mean * SOAR_LEVEL) found.push((index + 0.5) / speeds.length)
+  }
+
+  /* een clip die overal even hard beweegt heeft geen stand die zich aandient */
+  return found.length > 0 ? found : [0.5]
+}
+
+/**
+ * De klok van de clip op een plek erin.
+ *
+ * Werken de vleugels, dan is dat gewoon het profiel: de clip loopt zijn slagen
+ * af op zijn eigen tempo. Werken ze niet, dan loopt hij de slag waar hij in zit
+ * nog gewoon af en remt in de laatste `brake` vóór de eerstvolgende zweefstand,
+ * waar hij tot stilstand komt. `beating` mengt tussen die twee, dus het gaat in
+ * elkaar over zonder sprong.
+ *
+ * Voorbijschieten kan niet: de snelheid loopt met het kwadraat van wat er nog te
+ * gaan is naar nul, dus de stap wordt altijd veel kleiner dan de rest.
+ */
+export const clipRate = (
+  profile: number[],
+  soars: number[],
+  phase: number,
+  beating: number,
+  brake: number,
+): number => {
+  const shape = sampleProfile(profile, phase)
+  if (beating >= 1 || soars.length === 0) return shape
+
+  /* de eerstvolgende zweefstand, dus hij wacht hooguit één slag; met alleen de
+     verste zou hij de hele rondgang moeten uitzitten voordat hij mag stoppen */
+  let ahead = Infinity
+  for (const soar of soars) {
+    ahead = Math.min(ahead, (((soar - phase) % 1) + 1) % 1)
+  }
+
+  /* Lineair en niet met een smoothstep erop. Die laatste gaat vlak bij nul als
+     het kwadraat, en dan kruipt hij de laatste graden nog seconden lang door —
+     precies wat "langzaam tot stilstand komen" is. Lineair geeft een gewone
+     exponentiële nadering met een tijdconstante van `brake` maal de duur van de
+     rondgang, dus hij staat binnen een fractie van een seconde stil. En
+     voorbijschieten kan nog steeds niet: de stap is evenredig met wat er nog te
+     gaan is, dus altijd kleiner dan de rest. */
+  const approach = Math.min(1, ahead / Math.max(brake, 1e-6))
+
+  return shape * (approach + (1 - approach) * beating)
 }

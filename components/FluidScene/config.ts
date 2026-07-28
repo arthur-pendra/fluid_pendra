@@ -33,33 +33,65 @@ export const defaultConfig: FluidSceneConfig = {
     stirPoints: 14,
     targetThrottle: 3000,
 
-    /* Zweven op de vleugels, met de kop vast naar voren.
+    /* Zijwaarts volgt hij de cursor, naar voren en achteren zweeft hij op ruis.
+       De kop staat vast naar voren; alleen het lijf kantelt.
 
-       Zijwaarts het meest, want dat is het zweven zelf; naar voren en achteren
-       de helft daarvan, anders wordt het dobberen. Doorgerekend over een kwartier
-       zweeft hij 28% van de beeldhoogte naar opzij en 17% naar voren en achteren,
-       oftewel een halve draaklengte breed.
+       followRate is een afruil en geen instelling die je maximaal wil hebben.
+       Doorgemeten op een rustige haal heen en weer over de volle breedte:
 
-       Het driftempo bepaalt hoe vaak hij overhaalt:
+         0,9   kantelt tot 21°, maar loopt 1,10 achter van zijn bereik 1,16
+         1,5   tot 16°, achterstand 0,78   <- nu
+         2,5   tot 11°, achterstand 0,51
+         4,0   tot  7°, achterstand 0,33
 
-         0,05   elke 41 s van links naar rechts, te traag om nog te lezen
-         0,09   elke 21 s   <- nu
-         0,14   elke 14 s
-         0,20   elke 10 s, dan wordt het onrustig
+       Dat sneller volgen mínder kanteling geeft is niet fout maar het gevolg
+       van twee tijdschalen: de snelheidspiek wordt hoger maar veel korter, en
+       het lijf heeft met bankRate 2,4 ruim vier tienden nodig om zijn stand te
+       bereiken. Plak je de draak aan je cursor, dan krijg je vanzelf een stijf
+       lijf.
 
-       bankAngle is wat zweven van glijden onderscheidt. Twaalf graden is genoeg
-       om te zien dat het lijf meegaat en te weinig om te lijken alsof hij
-       stuurt. */
-    driftSide: 0.3,
-    driftAhead: 0.14,
+       bankAngle is de bovengrens, niet wat je meestal ziet. */
+    reachSide: 0.65,
+    reachAhead: 0.6,
+    followRate: 1.5,
+
+    /* Vooruit en achteruit zijn met opzet niet gelijk. Vooruit kost slagen en
+       gaat dus schoksgewijs; achteruit is zweven met gespreide vleugels en gaat
+       traag en gelijkmatig. De hele kringloop doorgerekend — clipklok stuurt de
+       slag, de slag levert de stuwkracht, de stuwkracht is de zet — over 0,85
+       eenheid:
+
+         vooruit    2,8 s, het slaan piekt op 1,00
+         achteruit  3,6 s, het slaan komt niet van de grond: 0,00
+
+       en na aankomst staat de clipklok op 0,000, precies in de zweefstand.
+
+       beatRate moet sneller zijn dan de reis zelf, anders komen de vleugels bij
+       een korte hop nooit op gang en schuift hij vooruit zonder te slaan. Op 2,5
+       staan ze binnen een halve seconde aan het werk. */
+    beatThrust: 1.1,
+    glideBack: 0.22,
+    arriveGap: 0.04,
+    beatRate: 2.5,
+
+    driftAhead: 0.05,
     driftRate: 0.09,
-    beatSurge: 0.12,
-    bankAngle: 12,
-    bankRate: 1.6,
+    bankAngle: 25,
+    bankRate: 2.4,
 
     thrustResponse: 6,
     thrustAdapt: 0.3,
     glideHold: 0.9,
+    /* Hoe snel hij ophoudt met slaan zodra je muis achter hem staat. Gemeten
+       vanuit vol slaan tot de klok stilstaat:
+
+         0,04   1,70 s      0,16   1,90 s
+         0,08   1,80 s      0,30   2,75 s
+
+       Onder de twee seconden zit vooral het uitlopen van `beatRate` plus de weg
+       naar de eerstvolgende zweefstand, hooguit een kwart rondgang. Korter kan
+       niet zonder hem midden in een slag te bevriezen. */
+    soarBrake: 0.08,
 
     /* De procedurele laag op de clip.
 
@@ -85,6 +117,21 @@ export const defaultConfig: FluidSceneConfig = {
     tailWave: 3.2,
     neckFollow: 0.7,
     neckRate: 2.2,
+
+    /* De vleugels in de zweefstand. De clip staat daar stil en een stilstaande
+       vleugel ziet er dood uit, dus hier komt een trage correctie overheen — met
+       per kant een eigen trekking uit de ruis, want symmetrie is precies wat het
+       levenloos maakt.
+
+       Doorgerekend op de echte botlengtes van de vleugel beweegt de punt, en
+       verschillen links en rechts, met dit deel van de spanwijdte:
+
+         0,05   punt 15%   links-rechts 14%
+         0,09   punt 26%   links-rechts 25%   <- nu
+         0,15   punt 44%   links-rechts 42%
+         0,25   punt 71%   links-rechts 68%, dan is het een slag geworden */
+    soarLift: 0.09,
+    soarRate: 0.35,
   },
 
   simulation: {

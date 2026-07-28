@@ -1,3 +1,4 @@
+import { noise } from './flight'
 import type { PoseConfig, Vec2 } from './types'
 
 /**
@@ -15,6 +16,12 @@ import type { PoseConfig, Vec2 } from './types'
  *
  *   De nek reageert op jou. De kop draait naar de cursor, verdeeld over elf
  *   schakels zodat het een bocht wordt en geen knik.
+ *
+ *   De vleugels doen iets in de zweefstand. Daar staat de clip stil, en een
+ *   stilstaande vleugel ziet er dood uit; een zwevende vogel corrigeert continu
+ *   op wat de lucht doet. Dat is hier een trage ruis op de vleugelhoek, met per
+ *   kant een eigen trekking zodat links en rechts nooit gelijk lopen. Symmetrie
+ *   is precies wat het levenloos maakt.
  */
 
 /**
@@ -97,3 +104,34 @@ export const lookYaw = (heading: Vec2, target: Vec2, limit: number): number => {
  */
 export const approach = (current: number, target: number, rate: number, delta: number): number =>
   current + (target - current) * (1 - Math.exp(-rate * delta))
+
+/**
+ * Hoe scheef de zweefbeweging naar de vleugelpunt trekt.
+ *
+ * Onder 1, dus de schouder doet het meeste en de punt volgt. Een vleugel draagt
+ * bij de schouder en buigt naar buiten toe mee; andersom ziet het eruit alsof
+ * alleen het puntje trilt.
+ */
+const SOAR_TAPER = 0.55
+
+/**
+ * Hoeveel sneller de kleine correctie aan de punt loopt dan de trage hoofdslag,
+ * en hoe groot die is ten opzichte daarvan.
+ *
+ * Geen geheel getal, want dan lopen de twee in de pas en zie je het patroon.
+ */
+const SOAR_RIPPLE_RATE = 2.7
+const SOAR_RIPPLE = 0.3
+
+/**
+ * De hoek van één vleugelbot tijdens het zweven, in radialen.
+ *
+ * `t` loopt van 0 aan de schouder tot 1 aan de hand, `seed` zet de twee vleugels
+ * op een eigen plek in de ruis.
+ */
+export const soarAngle = (t: number, time: number, seed: number, config: PoseConfig): number => {
+  const slow = noise(time * config.soarRate + seed) * 2 - 1
+  const ripple = noise(time * config.soarRate * SOAR_RIPPLE_RATE + seed + 7.3) * 2 - 1
+
+  return (slow + ripple * SOAR_RIPPLE * t) * config.soarLift * (1 - SOAR_TAPER * t)
+}

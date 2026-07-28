@@ -174,24 +174,38 @@ draaisnelheid, zoals de vis van Immersive Garden. Dat vliegt, maar dan vliegt hi
 ook wég — hij keert om, gaat ondersteboven het beeld door, en de camera hangt
 niet meer boven een draak maar boven een baan.
 
-Wat het wel is zit ertussenin. De kop staat vast naar voren en zijn plek zweeft
-daar subtiel omheen: zijwaarts het meest, want dat is wat een vleugel doet als hij
-een luchtstroom pakt, en naar voren en achteren wat minder. Doorgerekend over een
-kwartier is dat 30% van de beeldhoogte opzij en 20% naar voren, oftewel een halve
-draaklengte breed, met een overhaal van links naar rechts elke 21 seconden.
+Wat het wel is zit ertussenin, en de twee assen doen los van elkaar iets anders.
+De kop staat vast naar voren; alleen het lijf draait.
 
-Het lijf kantelt daar tot tien graden in mee, en dát is wat zweven van glijden
-onderscheidt: een vleugel die naar rechts draagt heeft zijn neus ook een beetje
-naar rechts. De kanteling wordt genormaliseerd op de steilste helling die de ruis
-kan hebben, zodat `bankAngle` gewoon in graden staat en niet meebeweegt met de
-driftstraal. De windas kantelt mee, dus zijn spoor blijft achter hém liggen.
+Zijwaarts volgt hij de cursor, en staat die niet in beeld dan is het midden het
+doel. Niet er meteen op staan maar er met gewicht naartoe, want dat achterlopen
+is wat de kanteling voedt. Zijn bereik is een deel van de halve beeldbreedte en
+geen wereldmaat: vast ingesteld gebruikt hij op een breed scherm maar een derde
+van de breedte en op een smal scherm te veel.
 
-De plek komt uit waarde-ruis en niet uit sinussen. Een lissajous heeft een
-periode, en over een minuut kijken zie je die terugkomen — precies het patroon
-dat een procedurele laag juist moet weghalen. Hij is ook een zuivere functie van
-de tijd, dus de begintoestand rekent hem uit in plaats van op nul te beginnen:
-anders stond hij één frame na het laden ineens waar de ruis hem wilde hebben, tot
-een derde beeldhoogte in één klap.
+Naar voren en achteren zweeft hij op waarde-ruis, en de vleugelslag zet hem daar
+bovenop naar voren. De cursor doet aan die as voorlopig niets. De ruis is geen
+som van sinussen: een lissajous heeft een periode en die zie je binnen een minuut
+terugkomen, precies het patroon dat een procedurele laag moet weghalen. Hij is
+ook een zuivere functie van de tijd, dus de begintoestand rekent hem uit in
+plaats van op nul te beginnen — anders stond hij één frame na het laden ineens
+waar de ruis hem wilde hebben.
+
+Het lijf kantelt tot vijfentwintig graden mee met hoe hard hij zijwaarts gaat, en
+dát is wat zweven van schuiven onderscheidt: een vleugel die naar rechts draagt
+heeft zijn neus ook naar rechts. Zonder die kanteling wijst het lijf de ene kant
+op terwijl de beweging de andere kant op gaat, en dan leest het als een sprite.
+De hoek wordt genormaliseerd op de snelheid van een besliste haal, zodat
+`bankAngle` in graden staat en niet meebeweegt met het volgtempo. De windas
+kantelt mee, dus het spoor blijft achter hém liggen.
+
+Het volgtempo is een afruil en geen instelling die je maximaal wil hebben. Op een
+rustige haal over de volle breedte kantelt hij bij 0,9 tot 21 graden maar loopt
+hij 1,10 achter van zijn bereik 1,16; bij 4,0 is de achterstand nog 0,33 maar
+kantelt hij nog maar 7 graden. Dat sneller volgen mínder kanteling geeft is niet
+fout maar het gevolg van twee tijdschalen: de snelheidspiek wordt hoger maar veel
+korter, en het lijf heeft ruim vier tienden nodig om zijn stand te bereiken. Wie
+de draak aan zijn cursor plakt krijgt vanzelf een stijf lijf.
 
 ### Een zet per slag, en langer open vleugels
 
@@ -222,6 +236,46 @@ De gemeten slagkracht wordt afgezet tegen zijn eigen langzaam zakkende piek. Hoe
 hard een vleugelpunt over het scherm veegt hangt af van de clip, de schaal van het
 model en het aantal roerpunten, en een knop die daaraan hangt moet je bij elk
 model opnieuw zoeken.
+
+### Slaan om vooruit te komen, zweven om terug te zakken
+
+De twee richtingen op de voor-achteras zijn met opzet niet gelijk, en dat is waar
+het realisme vandaan komt. Vooruit kost slagen: de afgelegde weg is de gemeten
+slagkracht maal `beatThrust`, dus tussen twee slagen door schuift hij niet op en
+zie je de zetjes. Achteruit kost niets, want een vogel klapwiekt niet om
+achteruit te zakken — die spreidt zijn vleugels en laat zich dragen. Dat gaat dus
+op een eigen, trage snelheid.
+
+Daarmee loopt de clip niet meer los van de vlucht. `beating` zegt of hij de
+vleugels nodig heeft, en dat stuurt de klok van de animatie. Het valt rond: geen
+slagen betekent geen gemeten slagkracht, dus geen stuwkracht, dus blijft de vraag
+om vooruit te komen staan tot de vleugels op gang zijn.
+
+De eerste opzet vertraagde daarvoor de hele clip, en dat zag er verkeerd uit: een
+draak die in slow motion doorklapwiekt is niet hetzelfde als een die ophoudt met
+slaan. De slag houdt nu zijn eigen tempo. Wat er wél gebeurt is dat hij de slag
+waar hij in zit gewoon afmaakt en daarna tot stilstand komt op de plek in de clip
+waar de vleugels het verst gespreid staan. Die plek is te vinden zonder hem aan
+te wijzen: het is het bemonsteringspunt waar het oppervlak het minst beweegt, en
+dat was al opgemeten. Voorbijschieten kan niet, want de snelheid loopt met het
+kwadraat van wat er nog te gaan is naar nul.
+
+In de zweefstand staat de clip stil, en een stilstaande vleugel ziet er dood uit
+— een zwevende vogel corrigeert continu op wat de lucht doet. Daar komt daarom
+een trage ruis op de vleugelhoek overheen, geschaald op hoe wéinig hij slaat,
+zodat het tijdens het slaan niet tegen de clip in gaat. Per kant een eigen
+trekking, want symmetrie is precies wat het levenloos maakt: doorgerekend op de
+echte botlengtes beweegt de vleugelpunt 26% van de spanwijdte en verschillen
+links en rechts tot 25%.
+
+De as waar een vleugel omheen stijgt en daalt is opgemeten en niet ingetypt, om
+dezelfde reden als bij de ketens: die kiest de rigger. Het is de lijfas, van de
+staartwortel naar de nekwortel, en bij deze draak ligt de lokale z van elk
+vleugelbot daar netjes mee op één lijn.
+
+De hele kringloop doorgerekend over 0,85 eenheid: vooruit 2,8 seconden met het
+slaan op 1,00, achteruit 3,6 seconden met het slaan op 0,00, en na aankomst staat
+de klok op nul, precies in de zweefstand.
 
 De vleugels blijven ook langer gespreid. De draak zweeft al meer dan hij slaat —
 vier slagen in dertien seconden, zo'n 0,3 Hz — maar de clip loopt op één tempo af,
@@ -307,7 +361,7 @@ volgen, drift, de lijn met roerpunten), de projectie (scherm naar uv naar vlak),
 de keuze van de roerpunten op een geanimeerd oppervlak, de asymmetrie van de
 vleugelslag, de stuwkracht die eruit volgt, het zweven met zijn kanteling, de
 ongelijkmatige clipklok en de procedurele laag op de botten — die laatste met het
-echte skelet als fixture, want daar is misgaan stil. Honderddertien tests,
+echte skelet als fixture, want daar is misgaan stil. Honderdnegentien tests,
 `npm test`. Het beeld zelf wordt niet automatisch getest.
 
 ## Wat er bewust niet in zit
