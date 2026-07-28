@@ -68,11 +68,15 @@ aan de eerste gaan eruit. Keyframes worden geresampled, want exports uit Sketchf
 bakken dertig frames per seconde plat, ook waar niets beweegt. De textuur gaat naar
 WebP op 1024, en het geheel wordt met meshopt gecomprimeerd.
 
-De draak in deze repo ging van 14,1 MB naar 506 kB, met 11.257 keyframes over van
+De draak in deze repo ging van 14,1 MB naar 730 kB, met 60.284 keyframes over van
 de 146.317. Meshopt en niet Draco, zodat de decoder uit je eigen bundel komt in
 plaats van van een CDN. `KHR_materials_pbrSpecularGlossiness` wordt omgezet naar
 metal-roughness: three.js heeft die extensie laten vallen, dus zonder die stap
 laadt een Sketchfab-model wel maar blijft de textuur weg.
+
+De resample-tolerantie is opgemeten en niet gegokt, want daar ging het eerst mis:
+te ver doorgezet bleven staartbotten op twee keyframes over de hele clip staan en
+werd de staartbeweging een rechte lijn. De afweging staat in het script.
 
 ## Afstellen
 

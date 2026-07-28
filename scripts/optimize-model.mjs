@@ -29,11 +29,24 @@ import sharp from 'sharp'
 
 const TEXTURE_SIZE = 1024
 
-/* Op quaternionen is dit ongeveer een halve graad. Onzichtbaar aan een
-   klapperende vleugel, maar het scheelt de helft van het bestand: de
-   Sketchfab-export bakt 30 keyframes per seconde plat, ook waar niets beweegt.
-   Zet lager als een beweging zichtbaar gaat haperen. */
-const RESAMPLE_TOLERANCE = 5e-3
+/**
+ * Hoe ver een keyframe van de lijn tussen zijn buren mag liggen voordat hij
+ * blijft staan. De Sketchfab-export bakt 30 keyframes per seconde plat, ook waar
+ * niets beweegt, dus hier valt veel weg.
+ *
+ * Deze waarde is opgemeten, niet gegokt, want daar ging het eerder mis. Gemeten
+ * als de hoekafwijking van elke botrotatie tegenover het origineel, over de hele
+ * clip op 120 Hz:
+ *
+ *   1e-4  60.284 keyframes  730 kB  mediaan 0,03deg  p90 0,10deg  ergste 0,31deg
+ *   1e-3  24.144 keyframes  587 kB  mediaan 0,53deg  p90 1,35deg  ergste 3,27deg
+ *   5e-3  11.257 keyframes  506 kB  mediaan 3,18deg  p90 6,88deg  ergste 13,41deg
+ *
+ * Bij 5e-3 bleven staartbotten op twee keyframes over de hele clip staan: de
+ * staartbeweging werd een rechte lijn en dat zag je. 1e-4 kost 224 kB meer dan
+ * 5e-3 en is de dertigduizend keyframes waard.
+ */
+const RESAMPLE_TOLERANCE = 1e-4
 
 const input = resolve(process.argv[2] ?? 'C:/Users/arthu/Werk/pendra.labs/immersive/dragon_flying/scene.gltf')
 const output = resolve(process.argv[3] ?? 'public/models/dragon-flying.glb')
@@ -120,7 +133,9 @@ await document.transform(
     resize: [TEXTURE_SIZE, TEXTURE_SIZE],
   }),
 
-  /* quantize zit in meshopt ingebakken */
+  /* quantize zit in meshopt ingebakken. 'high' scheelt hier 423 kB tegenover
+     'medium' en kost aan rotatiefout niets meetbaars: bij dezelfde tolerantie
+     bleven mediaan, p90 en ergste gelijk tot op twee decimalen. */
   meshopt({ encoder: MeshoptEncoder, level: 'high' }),
 )
 
