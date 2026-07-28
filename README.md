@@ -1,8 +1,8 @@
 # Fluid scene
 
 Een 3D-object dat je alleen ziet waar de vloeistof beweegt. Een geanimeerd model
-hangt in het midden en roert zichzelf zichtbaar; een stil model volgt je cursor.
-Een klik geeft een kleurimpuls.
+vliegt zelf en roert zichzelf zichtbaar; een stil model volgt je cursor. Een klik
+doet standaard niets; `clickImpulse` zet er een golf en een nieuwe kleurfase op.
 
 Next.js 16, React Three Fiber, TypeScript, CSS Modules.
 

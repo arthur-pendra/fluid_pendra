@@ -25,7 +25,8 @@ React Three Fiber, met eigen shaders en eigen knoppen.
 | Gelijkenis met het origineel | zelfde opbouw, eigen shaders, look in dezelfde geest en niet pixel voor pixel |
 | 3D-laag | R3F declaratief, imperatief alleen waar de rendervolgorde dat vraagt |
 | Vorm van het product | Next.js-project met de scene als kopieerbare map |
-| Gedrag van het object | volgt de cursor, klik stuurt het er direct heen |
+| Gedrag van het object | een geanimeerd model vliegt zelf, een stil model volgt de cursor |
+| Klik | doet standaard niets, aan te zetten met `clickImpulse` |
 | Afstellen | Leva, alleen tijdens ontwikkelen |
 
 ## Architectuur
@@ -64,8 +65,9 @@ vertex shader die de camera negeert.
 Zes passes per frame, op een vaste tijdstap van 0,008:
 
 1. **penselen** zetten kracht in het veld, als capsule tussen vorige en
-   huidige positie met aan beide uiteinden een eigen straal. Bij een klik
-   schrijft het penseel een naar buiten lopende golf.
+   huidige positie met aan beide uiteinden een eigen straal. Staat
+   `clickImpulse` aan, dan schrijft het penseel bij een klik ook een naar
+   buiten lopende golf.
 2. **advectie** sleept het veld mee, met BFECC-foutcorrectie zodat wervels
    scherp blijven, en met ruis die de stroming stuurt en in gaten laat vallen.
 3. **divergentie** meet waar het veld uit elkaar loopt.

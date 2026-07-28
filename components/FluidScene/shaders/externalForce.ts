@@ -72,6 +72,22 @@ export const externalForceFragmentShader = /* glsl */ `
       vec2 lastCenter = uLastCenter[i];
       float scale = uScale[i];
       float lastScale = uLastScale[i];
+
+      /* Buiten het bereik van dit penseel valt er niets te doen, en dat is voor
+         verreweg de meeste pixels het geval: een penseel beslaat een schijfje
+         van een paar procent van de buffer, en deze lus draait over alle
+         penselen voor élke pixel. De capsule past altijd binnen een cirkel om
+         het midden van zijn segment, dus dit is een veilige ondergrens en geen
+         benadering: elke pixel die hierna nog vorm zou krijgen komt er doorheen.
+
+         Niet bij een schokgolf: die schrijft een ring die veel verder reikt dan
+         de capsule, dus daar mag niet overgeslagen worden. */
+      if (uCircular[i] <= 0.0) {
+        float reach = length(center - lastCenter) * 0.5 + max(lastScale, scale);
+        vec2 toMiddle = vUv - (lastCenter + center) * 0.5;
+        if (dot(toMiddle, toMiddle) > reach * reach) continue;
+      }
+
       float forceLength = length(force);
 
       /* groeit of krimpt het penseel sneller dan het beweegt, dan is een

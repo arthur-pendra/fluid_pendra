@@ -23,8 +23,8 @@ const Home = () => {
     <div className={styles.page}>
       <FluidScene className={styles.scene} config={config} modelUrl="/models/dragon-flying.glb" />
       <p className={styles.hint}>
-        Beweeg je muis om de vloeistof te beroeren. De draak hangt in het midden
-        en roert met zijn vleugels, een klik geeft een kleurimpuls.
+        Beweeg je muis om de lucht te beroeren. De draak volgt je, slaat om
+        vooruit te komen en zweeft om terug te zakken.
       </p>
       {DebugPanel ? <DebugPanel value={config} onChange={setConfig} /> : null}
     </div>

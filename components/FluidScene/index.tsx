@@ -53,7 +53,12 @@ const FluidScene = ({
   const handlePointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
     const uv = readUv(event)
     if (!uv) return
+
+    /* de plek onthouden blijft altijd zinnig: op een aanraakscherm is een tik
+       de enige manier waarop de scene te weten komt waar je zit */
     pointer.current.uv = uv
+
+    if (!config.clickImpulse) return
     pointer.current.clickUv = uv
     pointer.current.clickedAt = performance.now()
   }
