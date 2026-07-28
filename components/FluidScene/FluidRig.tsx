@@ -28,7 +28,7 @@ import { BASE_HEADING, createFlightState, stepFlight } from './flight'
 import { strokeForce, windVector } from './strokeForce'
 import { approach, lookYaw, neckWeights, soarAngle, tailAngle } from './pose'
 import { createThrustState, stepThrust } from './thrust'
-import type { BoneChain } from './rig'
+import { localAxis, type BoneChain } from './rig'
 import { fullscreenVertexShader } from './shaders/fullscreen'
 import { paintingFragmentShader } from './shaders/painting'
 import type { FluidSceneConfig, StirSurface, Vec2 } from './types'
@@ -123,6 +123,7 @@ const FluidRig = ({ config, modelUrl, paused, pointer }: FluidRigProps) => {
      van de clipklok geen render kost */
   const beating = useRef(1)
   const poseRotation = useRef(new Quaternion())
+  const poseAxis = useRef(new Vector3())
   const weights = useRef<{ chain: BoneChain | null; shares: number[] }>({
     chain: null,
     shares: [],
@@ -236,16 +237,24 @@ const FluidRig = ({ config, modelUrl, paused, pointer }: FluidRigProps) => {
       elapsed.current += delta
       const object = config.object
       const rotation = poseRotation.current
+      const axis = poseAxis.current
+
+      /* De assen staan in wereldruimte en moeten per frame naar de eigen ruimte
+         van elk bot, want een draai die je op `bone.quaternion` vermenigvuldigt
+         geldt in het frame waar de clip het bot nú heeft staan. Daarvoor moeten
+         de wereldmatrices kloppen met wat de mixer zojuist geschreven heeft. */
+      objectScene.updateMatrixWorld(true)
 
       const tail = rig.tail
       if (tail && object.tailSway !== 0) {
         const last = Math.max(1, tail.bones.length - 1)
         for (let index = 0; index < tail.bones.length; index++) {
+          const bone = tail.bones[index]
           rotation.setFromAxisAngle(
-            tail.axes[index],
+            localAxis(bone, tail.axis, axis),
             tailAngle(index / last, elapsed.current, object),
           )
-          tail.bones[index].quaternion.multiply(rotation)
+          bone.quaternion.multiply(rotation)
         }
       }
 
@@ -259,11 +268,12 @@ const FluidRig = ({ config, modelUrl, paused, pointer }: FluidRigProps) => {
         rig.wings.forEach((wing, side) => {
           const last = Math.max(1, wing.bones.length - 1)
           for (let index = 0; index < wing.bones.length; index++) {
+            const bone = wing.bones[index]
             rotation.setFromAxisAngle(
-              wing.axes[index],
+              localAxis(bone, wing.axis, axis),
               soarAngle(index / last, elapsed.current, side * 31.7, object) * soaring,
             )
-            wing.bones[index].quaternion.multiply(rotation)
+            bone.quaternion.multiply(rotation)
           }
         })
       }
@@ -291,8 +301,12 @@ const FluidRig = ({ config, modelUrl, paused, pointer }: FluidRigProps) => {
         neckYaw.current = approach(neckYaw.current, target, object.neckRate, delta)
 
         for (let index = 0; index < neck.bones.length; index++) {
-          rotation.setFromAxisAngle(neck.axes[index], neckYaw.current * weights.current.shares[index])
-          neck.bones[index].quaternion.multiply(rotation)
+          const bone = neck.bones[index]
+          rotation.setFromAxisAngle(
+            localAxis(bone, neck.axis, axis),
+            neckYaw.current * weights.current.shares[index],
+          )
+          bone.quaternion.multiply(rotation)
         }
       }
     }

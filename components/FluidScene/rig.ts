@@ -16,22 +16,34 @@ import { Matrix4, Quaternion, Vector3, type Bone, type SkinnedMesh } from 'three
  * en dat is exact wat een laag hoort te doen. Voorwaarde is alleen dat het ná de
  * mixer en vóór `updateMatrixWorld` gebeurt.
  *
- * ## Om welke as
+ * ## Om welke as, en waarom dat per frame moet
  *
- * Dat staat nergens in een glb: een rigger kiest de assen zelf. Bij deze draak
- * loopt de lokale y van elk bot met de wereld-op mee, in alle drie de ketens,
- * maar dat is geluk en geen wet. Daarom wordt het opgemeten in plaats van
- * ingetypt, uit de inverse bind matrices — die geven de ruststand van elk bot,
- * los van waar de clip hem op dit moment heeft staan.
+ * De as staat in wereldruimte: omhoog voor de ketens, want een draai daaromheen
+ * leest van bovenaf als zwaaien, en de lijfas voor de vleugels, want daaromheen
+ * stijgen en dalen ze.
  *
- * `scripts/inspect-rig.mjs` rekent hetzelfde offline uit, om een nieuw model
+ * Die as moet per frame naar de eigen ruimte van het bot worden omgerekend, en
+ * niet één keer uit de bindstand. Dat laatste stond er eerst, en het is stil fout
+ * gegaan: een draai die je op `bone.quaternion` vermenigvuldigt geldt in het
+ * frame van het bot zoals de clip het op dát moment heeft staan, niet zoals het
+ * in de bindstand stond. Draaien de ouders mee, dan wijst een as uit de
+ * bindstand ergens anders heen.
+ *
+ * Bij deze draak loopt dat flink weg. Opgemeten over de clip staat een as uit de
+ * bindstand tot 66 graden scheef op de staart, 78 op de nek en 45 op de
+ * vleugels. Bij die hoeken is een zwaai voor een groot deel een draai om de
+ * staart-as zelf geworden, en dat ziet eruit als een staart die ronddraait in
+ * plaats van uitslaat. Per frame omgerekend is die afwijking nul, en verzet de
+ * laag de staartpunt volledig zijwaarts in plaats van voor negentig procent.
+ *
+ * `scripts/inspect-rig.mjs` rekent de bindstand offline uit, om een nieuw model
  * langs te leggen voordat je het in een frame-loop zet.
  */
 export type BoneChain = {
   /** de schakels op volgorde, van basis naar punt */
   bones: Bone[]
-  /** per schakel de lokale as waar een draai om op het scherm als zwaaien leest */
-  axes: Vector3[]
+  /** de as in wereldruimte waar een draai omheen het gewenste effect geeft */
+  axis: Vector3
 }
 
 export type ModelRig = {
@@ -97,35 +109,34 @@ const UP = new Vector3(0, 1, 0)
 const WING_BONES = ['shoulder', 'forearm', 'hand']
 
 const findChain = (mesh: SkinnedMesh, prefix: string): BoneChain | null => {
-  const { bones, boneInverses } = mesh.skeleton
-  const chain = orderChain(bones as unknown as ChainNode[], prefix)
-  const order = chain.map((bone) => bones.indexOf(bone as unknown as Bone))
+  const chain = orderChain(mesh.skeleton.bones as unknown as ChainNode[], prefix)
+  if (chain.length < 2) return null
 
-  if (order.length < 2 || order.some((index) => index < 0)) return null
+  return { bones: chain as unknown as Bone[], axis: UP.clone() }
+}
 
-  const scratch = new Matrix4()
-  const rotation = new Quaternion()
+/* hergebruikt bij het omrekenen, zodat er per frame niets gealloceerd wordt */
+const scratchPosition = new Vector3()
+const scratchRotation = new Quaternion()
+const scratchScale = new Vector3()
 
-  const axes = order.map((index) => {
-    /* de bind matrix zet van de ruimte van de mesh naar die van het bot; andersom
-       is dus de ruststand van het bot zelf */
-    scratch.copy(boneInverses[index]).invert()
-    rotation.setFromRotationMatrix(scratch)
-    return UP.clone().applyQuaternion(rotation.invert()).normalize()
-  })
-
-  return { bones: order.map((index) => bones[index]), axes }
+/**
+ * Een as uit wereldruimte naar de eigen ruimte van een bot, zoals het er op dit
+ * moment bij staat.
+ *
+ * Werkt op `matrixWorld`, dus de aanroeper moet die eerst hebben bijgewerkt.
+ * Ontleden en niet zomaar de rotatie uit de matrix lezen: het model is geschaald,
+ * en `setFromRotationMatrix` gaat uit van een matrix zonder schaal.
+ */
+export const localAxis = (bone: Bone, worldAxis: Vector3, target: Vector3): Vector3 => {
+  bone.matrixWorld.decompose(scratchPosition, scratchRotation, scratchScale)
+  return target.copy(worldAxis).applyQuaternion(scratchRotation.invert()).normalize()
 }
 
 /**
  * De ruststand van een bot, uit de inverse bind matrix: die zet van de ruimte van
  * de mesh naar die van het bot, dus andersom is het bot zelf.
  */
-const restRotation = (mesh: SkinnedMesh, index: number) =>
-  new Quaternion().setFromRotationMatrix(
-    new Matrix4().copy(mesh.skeleton.boneInverses[index]).invert(),
-  )
-
 const restPosition = (mesh: SkinnedMesh, index: number) =>
   new Vector3().setFromMatrixPosition(
     new Matrix4().copy(mesh.skeleton.boneInverses[index]).invert(),
@@ -182,12 +193,7 @@ const findWing = (mesh: SkinnedMesh, side: string, axis: Vector3): BoneChain | n
   )
   if (found.length < 2) return null
 
-  return {
-    bones: found.map((index) => mesh.skeleton.bones[index]),
-    axes: found.map((index) =>
-      axis.clone().applyQuaternion(restRotation(mesh, index).invert()).normalize(),
-    ),
-  }
+  return { bones: found.map((index) => mesh.skeleton.bones[index]), axis: axis.clone() }
 }
 
 const findSkinnedMesh = (root: import('three').Object3D): SkinnedMesh | null => {

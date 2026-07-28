@@ -303,12 +303,23 @@ die je daarna op een bot vermenigvuldigt stapelt niet op maar geldt precies éé
 frame. Voorwaarde is alleen dat het ná de mixer en vóór `updateMatrixWorld`
 gebeurt, en dat haakje lag er al voor de roerpunten.
 
-Om welke as staat nergens in een glb — een rigger kiest die zelf. Bij deze draak
-loopt de lokale y van elk bot met de wereld-op mee, in alle drie de ketens, maar
-dat is geluk en geen wet. Het wordt daarom opgemeten uit de inverse bind
-matrices, die de ruststand geven los van waar de clip het bot nu heeft staan.
-`scripts/inspect-rig.mjs` rekent hetzelfde offline uit om een nieuw model langs
-te leggen.
+Om welke as staat nergens in een glb — een rigger kiest die zelf. De as staat
+daarom in wereldruimte: omhoog voor de ketens, want een draai daaromheen leest
+van bovenaf als zwaaien, en de lijfas voor de vleugels.
+
+Die as moet per frame naar de eigen ruimte van elk bot worden omgerekend, en dat
+was eerst niet zo. Een draai die je op `bone.quaternion` vermenigvuldigt geldt in
+het frame waar de clip het bot op dát moment heeft staan, niet zoals het in de
+bindstand stond, dus zodra de ouders meedraaien wijst een as uit de bindstand
+ergens anders heen. Opgemeten over de clip staat zo'n as tot 66 graden scheef op
+de staart, 78 op de nek en 45 op de vleugels — en bij die hoeken is een zwaai
+voor een groot deel een draai om de staart-as zelf geworden. Per frame omgerekend
+is de afwijking nul en verzet de laag de staartpunt volledig zijwaarts in plaats
+van voor negentig procent. Het kost een extra `updateMatrixWorld` per frame:
+12,6 µs, oftewel 0,08% van een frame op 60 fps.
+
+`scripts/inspect-rig.mjs` rekent de bindstand offline uit om een nieuw model
+langs te leggen.
 
 De staart doet iets uit zichzelf: een lopende golf van basis naar punt, met een
 trage ademhaling over de amplitude zodat het geen metronoom wordt. De nek

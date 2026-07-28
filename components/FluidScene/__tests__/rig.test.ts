@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { isChainBone, orderChain, type ChainNode } from '../rig'
+import { Bone, Quaternion, Vector3 } from 'three'
+import { isBone, isChainBone, localAxis, orderChain, type ChainNode } from '../rig'
 import skeleton from './skeleton.json'
 
 /**
@@ -89,5 +90,90 @@ describe('orderChain op het echte skelet', () => {
     const los: ChainNode = { name: 'tail_09', parent: null, children: [] }
 
     expect(orderChain([a, b, los], 'tail').map((bone) => bone.name)).toEqual(['tail_01', 'tail_02'])
+  })
+})
+
+describe('isBone', () => {
+  it('herkent een bot aan zijn naam plus de nummering van de loader', () => {
+    expect(isBone('l_shoulder73_73_76', 'l_shoulder')).toBe(true)
+    expect(isBone('l_shoulder', 'l_shoulder')).toBe(true)
+  })
+
+  it('trapt niet in een naam die er alleen mee begint', () => {
+    /* zonder de cijfer-eis draait de zweeflaag l_shoulderTwist mee */
+    expect(isBone('l_shoulderTwist112_112_115', 'l_shoulder')).toBe(false)
+    expect(isBone('l_handMid76_76_79', 'l_hand')).toBe(false)
+  })
+})
+
+describe('localAxis', () => {
+  /**
+   * Hier ging het stil mis. De as werd één keer uit de bindstand gehaald, maar
+   * een draai die je op `bone.quaternion` vermenigvuldigt geldt in het frame
+   * waar de clip het bot op dat moment heeft staan. Draaien de ouders mee, dan
+   * wijst zo'n as ergens anders heen: opgemeten op deze draak tot 66 graden
+   * scheef op de staart, en dan wordt een zwaai een draai om de staart-as.
+   */
+  const UP = new Vector3(0, 1, 0)
+
+  const chain = () => {
+    const root = new Bone()
+    const middle = new Bone()
+    const tip = new Bone()
+    root.add(middle)
+    middle.add(tip)
+    middle.position.set(0, 0, 1)
+    tip.position.set(0, 0, 1)
+    return { root, middle, tip }
+  }
+
+  it('geeft de as terug in de eigen ruimte van het bot', () => {
+    const { root, tip } = chain()
+    root.updateMatrixWorld(true)
+
+    const axis = localAxis(tip, UP, new Vector3())
+    expect(axis.x).toBeCloseTo(0, 9)
+    expect(axis.y).toBeCloseTo(1, 9)
+    expect(axis.z).toBeCloseTo(0, 9)
+  })
+
+  it('volgt mee als een ouder gedraaid staat', () => {
+    /* een kwartslag om z bij de wortel: wereld-op ligt voor het kind nu langs
+       zijn eigen +x, en precies dat moet eruit komen */
+    const { root, tip } = chain()
+    root.rotation.z = Math.PI / 2
+    root.updateMatrixWorld(true)
+
+    const axis = localAxis(tip, UP, new Vector3())
+    expect(axis.x).toBeCloseTo(1, 6)
+    expect(axis.y).toBeCloseTo(0, 6)
+    expect(axis.z).toBeCloseTo(0, 6)
+  })
+
+  it('komt in de wereld precies op de gevraagde as uit', () => {
+    /* de eigenlijke eis: draai je het bot om deze as, dan draait het om de
+       wereld-as die je vroeg */
+    const { root, middle, tip } = chain()
+    root.rotation.set(0.4, -0.9, 0.3)
+    middle.rotation.set(-0.7, 0.2, 1.1)
+    root.updateMatrixWorld(true)
+
+    const axis = localAxis(tip, UP, new Vector3())
+    const world = axis.clone().applyQuaternion(tip.getWorldQuaternion(new Quaternion()))
+
+    expect(world.angleTo(UP)).toBeCloseTo(0, 6)
+  })
+
+  it('trekt zich niets aan van de schaal van het model', () => {
+    /* het model wordt op maat geschaald, en een rotatie uit een geschaalde
+       matrix lezen zonder te ontleden geeft een verkeerde as */
+    const { root, tip } = chain()
+    root.scale.setScalar(0.073)
+    root.rotation.z = Math.PI / 2
+    root.updateMatrixWorld(true)
+
+    const axis = localAxis(tip, UP, new Vector3())
+    expect(axis.length()).toBeCloseTo(1, 9)
+    expect(axis.x).toBeCloseTo(1, 6)
   })
 })
