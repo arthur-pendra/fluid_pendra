@@ -53,6 +53,15 @@ export const defaultConfig: FluidSceneConfig = {
     cursorForce: 60,
     objectForce: 154,
 
+    /* de kop staat naar boven, dus de wind gaat naar beneden. De terugslag mag
+       vrijwel niets meer: duwt hij ook maar een beetje bovenwinds, dan loopt hij
+       tegen het spoor van de vorige neerslag in en wordt de wind rommelig. Ruim
+       de helft van de dwarsbeweging eruit gekamd, want dat is wat er naar opzij
+       uitwaaiert; de rest blijft staan, anders wordt het een rechte muur. */
+    windDirection: 270,
+    strokeBias: 0.92,
+    strokeSteering: 0.55,
+
     /* cursorSize 350, gedeeld door de schermruimtemaat 1,804 en genormaliseerd
        op een buffer van 1024 met basis 512, maal 0,5. De straal schaalt met de
        snelheid tussen 0,2 en 0,8 van deze waarde. */

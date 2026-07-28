@@ -50,6 +50,20 @@ export const screenToSimulationUv = (uv: Vec2, ratio: number): Vec2 => {
   return { x: x + 0.5, y: y + 0.5 }
 }
 
+/**
+ * Dezelfde afbeelding, maar dan voor een richting in plaats van een plek: het
+ * verschuiven naar het midden valt weg, het omklappen en het samenpersen niet.
+ *
+ * Een richting die je op het scherm uitmeet en daarna met de snelheid van een
+ * penseel wil vergelijken moet hier doorheen. Doe je dat niet, dan wijst je as
+ * op een breed scherm de verkeerde kant op zodra hij niet toevallig langs een
+ * van beide assen ligt. De uitkomst is niet genormaliseerd.
+ */
+export const screenToSimulationDirection = (direction: Vec2, ratio: number): Vec2 =>
+  ratio > 1
+    ? { x: direction.x, y: -direction.y / ratio }
+    : { x: direction.x * ratio, y: -direction.y }
+
 /** afstand waarop de camera moet staan om een vlak van deze hoogte te vullen */
 export const distanceForHeight = (fovDegrees: number, height: number) =>
   height / 2 / Math.tan((fovDegrees * Math.PI) / 360)

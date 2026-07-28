@@ -80,6 +80,31 @@ export type SimulationConfig = {
   /** krachtvermenigvuldiger van de cursor en van de objectpunten */
   cursorForce: number
   objectForce: number
+
+  /**
+   * De asymmetrie van de vleugelslag, zie strokeForce.ts. Geldt alleen voor een
+   * geanimeerd model dat zichzelf roert; de bol en stille modellen drijven en
+   * hebben geen slag om te dempen.
+   *
+   * `windDirection` is de kant waar de wind naartoe waait, in graden op het
+   * scherm: 0 naar rechts, 90 naar boven. Dat is de staartkant van het model,
+   * dus draai deze mee met `object.spin`.
+   *
+   * `strokeBias` laat de slag tegen de wind in glijden in plaats van duwen, 0
+   * tot 1. Op 0 duwt de vleugel weer even hard heen als terug. Hoog hoort hier:
+   * een terugslag die ook maar een beetje bovenwinds duwt loopt tegen het spoor
+   * van de vorige neerslag in, en dat is wat de wind rommelig maakt. Op precies
+   * 1 zet het penseel tijdens de halve slag terug geen kracht meer, en schrijft
+   * het dus ook geen intensiteit.
+   *
+   * `strokeSteering` kamt weg wat er dwars op de windas gebeurt, 0 tot 1. Dat
+   * deel is waarom de wind naar opzij uitwaaiert in plaats van naar achteren te
+   * trekken. Niet helemaal dichtdraaien: wat overblijft houdt het onrustig
+   * genoeg om natuurlijk te blijven.
+   */
+  windDirection: number
+  strokeBias: number
+  strokeSteering: number
   /** penseelstraal in uv bij volle snelheid */
   brushSize: number
   /** deel van die straal bij stilstand en bij volle snelheid */

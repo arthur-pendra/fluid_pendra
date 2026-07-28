@@ -22,9 +22,10 @@ import {
   screenToSimulationUv,
   uvToPlane,
 } from './projection'
+import { strokeForce, windVector } from './strokeForce'
 import { fullscreenVertexShader } from './shaders/fullscreen'
 import { paintingFragmentShader } from './shaders/painting'
-import type { FluidSceneConfig, StirSurface } from './types'
+import type { FluidSceneConfig, StirSurface, Vec2 } from './types'
 import type { PointerState } from './pointer'
 
 /* de camera kijkt recht naar beneden; het zichtbare vlak is twee eenheden
@@ -183,7 +184,14 @@ const FluidRig = ({ config, modelUrl, paused, pointer }: FluidRigProps) => {
 
     const sim = config.simulation
 
-    const applyBrush = (index: number, screenUv: Vec2Like | null, gain: number) => {
+    /* `wind` is de as waarlangs een vleugelslag asymmetrisch wordt gemaakt; de
+       cursor en een drijvend object krijgen hem niet, die hebben geen slag */
+    const applyBrush = (
+      index: number,
+      screenUv: Vec2Like | null,
+      gain: number,
+      wind: Vec2 | null,
+    ) => {
       const brush = brushes[index]
       if (!brush) return
 
@@ -205,6 +213,15 @@ const FluidRig = ({ config, modelUrl, paused, pointer }: FluidRigProps) => {
       brush.force.subVectors(brush.center, brush.lastCenter)
       const step = brush.force.length()
       if (step > MAX_STEP) brush.force.multiplyScalar(MAX_STEP / step)
+
+      /* de slag mee duwt, de slag terug glijdt. Bewust vóór `gain` en met
+         `step` los ervan: straal en intensiteit blijven hangen aan hoe hard de
+         vleugel echt beweegt, zodat het model niet meeknippert met zijn slag. */
+      if (wind) {
+        const shaped = strokeForce(brush.force, wind, sim.strokeBias, sim.strokeSteering)
+        brush.force.set(shaped.x, shaped.y)
+      }
+
       brush.force.multiplyScalar(gain)
 
       /* de straal groeit mee met de snelheid, zoals in het origineel: van een
@@ -222,28 +239,30 @@ const FluidRig = ({ config, modelUrl, paused, pointer }: FluidRigProps) => {
       brush.circular = index === 0 && shockwaveRunning ? elapsedSinceClick : 0
     }
 
-    applyBrush(0, input.uv, sim.cursorForce)
+    applyBrush(0, input.uv, sim.cursorForce, null)
 
     if (anchored && surface.mesh) {
       /* de mixer heeft deze frame alleen de lokale transforms gezet; zonder dit
          leest getVertexPosition de botstand van het vorige frame */
       objectScene.updateMatrixWorld(true)
 
+      const wind = windVector(sim.windDirection, ratio)
+
       for (let index = 0; index < config.object.stirPoints; index++) {
         const vertex = surface.vertices[index]
         if (vertex === undefined) {
-          applyBrush(index + 1, null, sim.objectForce)
+          applyBrush(index + 1, null, sim.objectForce, wind)
           continue
         }
         surface.mesh.getVertexPosition(vertex, scratch.current)
         surface.mesh.localToWorld(scratch.current).project(objectCamera)
-        applyBrush(index + 1, ndcToUv(scratch.current.x, scratch.current.y), sim.objectForce)
+        applyBrush(index + 1, ndcToUv(scratch.current.x, scratch.current.y), sim.objectForce, wind)
       }
     } else {
       const points = stirPoints(motion.current, config.object.stirPoints, config.object.length)
       points.forEach((point, index) => {
         scratch.current.set(point.x, config.object.height, point.y).project(objectCamera)
-        applyBrush(index + 1, ndcToUv(scratch.current.x, scratch.current.y), sim.objectForce)
+        applyBrush(index + 1, ndcToUv(scratch.current.x, scratch.current.y), sim.objectForce, null)
       })
     }
 

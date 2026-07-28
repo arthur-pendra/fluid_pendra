@@ -3,6 +3,7 @@ import {
   distanceForHeight,
   ndcToUv,
   planeHalfSize,
+  screenToSimulationDirection,
   screenToSimulationUv,
   uvToPlane,
 } from '../projection'
@@ -27,6 +28,27 @@ describe('screenToSimulationUv', () => {
   it('klapt de y-as om, want de buffer telt andersom', () => {
     expect(screenToSimulationUv({ x: 0.5, y: 1 }, 1).y).toBeCloseTo(0, 6)
     expect(screenToSimulationUv({ x: 0.5, y: 0 }, 1).y).toBeCloseTo(1, 6)
+  })
+})
+
+describe('screenToSimulationDirection', () => {
+  it('loopt gelijk met het verschil tussen twee plekken', () => {
+    /* dit is de hele reden dat de functie bestaat: een richting hoort dezelfde
+       kant op te wijzen als het spoor dat de plekken erlangs trekken */
+    const ratio = 1.7
+    const from = { x: 0.3, y: 0.4 }
+    const to = { x: 0.55, y: 0.9 }
+
+    const a = screenToSimulationUv(from, ratio)
+    const b = screenToSimulationUv(to, ratio)
+    const direction = screenToSimulationDirection({ x: to.x - from.x, y: to.y - from.y }, ratio)
+
+    expect(direction.x).toBeCloseTo(b.x - a.x, 6)
+    expect(direction.y).toBeCloseTo(b.y - a.y, 6)
+  })
+
+  it('klapt de y-as om en laat het midden buiten beschouwing', () => {
+    expect(screenToSimulationDirection({ x: 1, y: 1 }, 1)).toEqual({ x: 1, y: -1 })
   })
 })
 

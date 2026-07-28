@@ -111,8 +111,57 @@ sterkere bron dan een lijn door een stilstaand object. Volgen en drift blijven
 gelden voor de bol en voor modellen zonder animatie; het component kiest zelf,
 er is geen knop voor.
 
-Twee dingen zijn daarbij tegen de intuïtie in gegaan, en die staan er niet voor
-niets zo in.
+### De slag moet asymmetrisch zijn
+
+Een roerpunt op een vleugel duwde eerst even hard heen als terug. Over een hele
+slag heffen die twee elkaar op: het veld schudt op zijn plek en er komt geen
+richting uit. Een echte vleugel doet dat niet. Op de neerslag staat hij dwars op
+de lucht en duwt hij die naar achteren, op de terugslag vouwt hij zich in en
+glijdt hij er zo goed als krachteloos doorheen. Dat verschil is waar
+voortstuwing vandaan komt, en zonder dat verschil ziet stilstaand geklots eruit
+als stilstaand geklots.
+
+Er ligt daarom een windas over de scene, en elke slag wordt daar tegen
+afgemeten. Niet als één geheel: de slag gaat uit elkaar in het deel dat langs de
+as loopt en het deel dat er dwars op staat, want die twee veroorzaken twee
+verschillende dingen op het scherm.
+
+Het deel tegen de wind in breekt het spoor open. Duwt de terugslag ook maar een
+beetje bovenwinds, dan loopt hij tegen het spoor van de vorige neerslag in en
+wordt de wind rommelig in plaats van gericht. `strokeBias` laat die halve slag
+glijden in plaats van duwen, en staat daarom hoog. De overgang tussen mee en
+tegen loopt door een smalle band rond de dwarsstand, niet over de volle halve
+cirkel: liep hij breed, dan bleef een schuine terugslag alsnog flink duwen, en
+precies dat was de bron van de rommel. Een harde schakelaar op het teken kan ook
+niet, want dan klapt een punt dat vlak langs de as veegt van frame tot frame
+heen en weer.
+
+Het deel dwars op de as laat de wind naar opzij uitwaaieren. `strokeSteering`
+kamt daar een deel van weg. Helemaal dichtdraaien moet je hem niet: wat
+overblijft is wat het onrustig genoeg houdt om natuurlijk te blijven, en zonder
+dat doen alle roerpunten hetzelfde en komt er een rechte muur uit in plaats van
+een wervel.
+
+De slag mee wordt bewust niet versterkt: dat de wind naar achteren gaat
+overheersen komt doordat al het andere wegvalt, en de totale sterkte blijft
+daarmee aan `objectForce` hangen in plaats van aan twee knoppen die elkaar
+tegenwerken.
+
+De asymmetrie zit alleen op de kracht, niet op de penseelstraal en de
+intensiteit: die twee blijven hangen aan hoe hard de vleugel echt beweegt, zodat
+het model niet meeknippert met zijn eigen slag. Wel een gevolg om te kennen: op
+`strokeBias` precies 1 zet het penseel tijdens de halve slag terug geen kracht
+meer, en schrijft het dus ook geen intensiteit.
+
+De as staat in graden op het scherm en hoort naar de staart te wijzen, dus draai
+hem mee met `object.spin`. Dat is een knop en geen meting: welke kant een model
+op kijkt staat nergens in een glb, en de richting waarin een vleugel het hardst
+veegt is bij een symmetrische animatie niet te onderscheiden van zijn
+tegengestelde.
+
+### Twee dingen tegen de intuïtie in
+
+Deze staan er niet voor niets zo in.
 
 Roerpunten hangen aan vertices, niet aan botten, ook al lijkt dat laatste de
 kortere weg. De botten van een glTF-model staan in hun eigen ruimte, en het
@@ -143,9 +192,10 @@ dpr-plafond van 1,5.
 ## Testen
 
 De rekenkundige kern is puur en heeft unit tests: het objectgedrag (doel
-volgen, drift, de lijn met roerpunten), de projectie (scherm naar uv naar vlak)
-en de keuze van de roerpunten op een geanimeerd oppervlak. Achtentwintig tests,
-`npm test`. Het beeld zelf wordt niet automatisch getest.
+volgen, drift, de lijn met roerpunten), de projectie (scherm naar uv naar vlak),
+de keuze van de roerpunten op een geanimeerd oppervlak en de asymmetrie van de
+vleugelslag. Zesenveertig tests, `npm test`. Het beeld zelf wordt niet
+automatisch getest.
 
 ## Wat er bewust niet in zit
 
