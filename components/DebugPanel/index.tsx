@@ -25,6 +25,7 @@ const { object, simulation, painting } = defaultConfig
 const DebugPanel = ({ onChange }: DebugPanelProps) => {
   const controls = useControls({
     background: defaultConfig.background,
+    clickImpulse: defaultConfig.clickImpulse,
 
     object: folder(
       {
@@ -45,6 +46,10 @@ const DebugPanel = ({ onChange }: DebugPanelProps) => {
         neckFollow: { value: object.neckFollow, min: 0, max: 2, step: 0.01 },
         neckRate: { value: object.neckRate, min: 0.1, max: 12, step: 0.1 },
         soarLift: { value: object.soarLift, min: 0, max: 0.4, step: 0.005 },
+        diveEvery: { value: object.diveEvery, min: 0, max: 60, step: 1 },
+        diveAcceleration: { value: object.diveAcceleration, min: 0.2, max: 6, step: 0.1 },
+        awayTime: { value: object.awayTime, min: 0, max: 8, step: 0.1 },
+        enterRate: { value: object.enterRate, min: 0.2, max: 4, step: 0.1 },
         soarRate: { value: object.soarRate, min: 0.05, max: 2, step: 0.01 },
       },
       { collapsed: false },
@@ -74,6 +79,7 @@ const DebugPanel = ({ onChange }: DebugPanelProps) => {
         cursorForce: { value: simulation.cursorForce, min: 0, max: 300, step: 1 },
         objectForce: { value: simulation.objectForce, min: 0, max: 600, step: 1 },
         windDirection: { value: simulation.windDirection, min: 0, max: 360, step: 1 },
+        windSpeed: { value: simulation.windSpeed, min: 0, max: 0.6, step: 0.01 },
         strokeBias: { value: simulation.strokeBias, min: 0, max: 1, step: 0.01 },
         strokeSteering: { value: simulation.strokeSteering, min: 0, max: 1, step: 0.01 },
         brushSize: { value: simulation.brushSize, min: 0.01, max: 0.5, step: 0.005 },
@@ -91,6 +97,13 @@ const DebugPanel = ({ onChange }: DebugPanelProps) => {
         warp: { value: painting.warp, min: 0, max: 0.05, step: 0.0005 },
         rippleStrength: { value: painting.rippleStrength, min: 0, max: 0.2, step: 0.001 },
         tintAmount: { value: painting.tintAmount, min: 0, max: 0.3, step: 0.005 },
+        wispAmount: { value: painting.wispAmount, min: 0, max: 0.6, step: 0.01 },
+        wispColor: painting.wispColor,
+        wispScale: { value: painting.wispScale, min: 0.2, max: 4, step: 0.1 },
+        wispGap: { value: painting.wispGap, min: 0, max: 0.95, step: 0.01 },
+        wispSpeed: { value: painting.wispSpeed, min: 0, max: 0.8, step: 0.01 },
+        wispWarp: { value: painting.wispWarp, min: 0, max: 1.5, step: 0.01 },
+        wispClear: { value: painting.wispClear, min: 0, max: 3, step: 0.05 },
       },
       { collapsed: true },
     ),
@@ -100,6 +113,7 @@ const DebugPanel = ({ onChange }: DebugPanelProps) => {
     onChange({
       ...defaultConfig,
       background: controls.background,
+      clickImpulse: controls.clickImpulse,
       object: {
         ...object,
         color: controls.color,
@@ -127,12 +141,17 @@ const DebugPanel = ({ onChange }: DebugPanelProps) => {
         neckRate: controls.neckRate,
         soarLift: controls.soarLift,
         soarRate: controls.soarRate,
+        diveEvery: controls.diveEvery,
+        diveAcceleration: controls.diveAcceleration,
+        awayTime: controls.awayTime,
+        enterRate: controls.enterRate,
       },
       simulation: {
         ...simulation,
         cursorForce: controls.cursorForce,
         objectForce: controls.objectForce,
         windDirection: controls.windDirection,
+        windSpeed: controls.windSpeed,
         strokeBias: controls.strokeBias,
         strokeSteering: controls.strokeSteering,
         brushSize: controls.brushSize,
@@ -147,6 +166,13 @@ const DebugPanel = ({ onChange }: DebugPanelProps) => {
         warp: controls.warp,
         rippleStrength: controls.rippleStrength,
         tintAmount: controls.tintAmount,
+        wispAmount: controls.wispAmount,
+        wispColor: controls.wispColor,
+        wispScale: controls.wispScale,
+        wispGap: controls.wispGap,
+        wispSpeed: controls.wispSpeed,
+        wispWarp: controls.wispWarp,
+        wispClear: controls.wispClear,
       },
     })
   }, [controls, onChange])

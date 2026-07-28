@@ -144,9 +144,44 @@ export type ThrustConfig = {
   soarBrake: number
 }
 
+/**
+ * De duik, zie dive.ts. Om de zoveel vleugelslagen laat hij zich vallen en komt
+ * even later van opzij weer binnen.
+ */
+export type DiveConfig = {
+  /** na hoeveel vleugelslagen hij duikt; op 0 duikt hij nooit */
+  diveEvery: number
+  /** de vaart waarmee de duik begint, in eenheden per seconde. Die had hij al
+      uit zijn laatste slag, dus op nul beginnen zou een knik geven in plaats van
+      een boog */
+  diveSpeed: number
+  /** hoe hard hij op gang komt tijdens het vallen, in eenheden per seconde per
+      seconde. Een versnelling en geen vaste snelheid, want meteen op eindtempo
+      leest als een lift in plaats van als loslaten */
+  diveAcceleration: number
+  /** hoe ver van de camera af hij moet zijn voordat hij als weg telt. De camera
+      staat op zo'n 2,4 eenheden, dus op 12 is hij nog een vijfde van zijn
+      grootte en roert hij vrijwel niets meer */
+  diveDepth: number
+  /** hoe snel de neus omlaag gaat, per seconde. De kanteling loopt vóór op het
+      wegvallen, want vlak wegzakken is geen duik */
+  pitchRate: number
+  /** over hoeveel eenheden diepte hij in de achtergrond oplost. De fog begint
+      een eindje achter het vliegvlak, dus tijdens het gewone vliegen merk je er
+      niets van; pas als hij wegduikt vervaagt hij */
+  fogDepth: number
+  /** hoe lang hij uit beeld blijft, in seconden */
+  awayTime: number
+  /** hoe snel hij van de zijkant weer naar binnen komt, per seconde */
+  enterRate: number
+  /** hoe dicht bij het midden hij moet zijn voordat de cursor het weer overneemt */
+  enterGap: number
+}
+
 export type ObjectConfig = ThrustConfig &
   PoseConfig &
-  FlightConfig & {
+  FlightConfig &
+  DiveConfig & {
   /** kleur van het ingebouwde object; een eigen model houdt zijn eigen kleur */
   color: string
   /** achtergrond van de render target, net iets donkerder dan de pagina */
@@ -230,6 +265,15 @@ export type SimulationConfig = {
    * genoeg om natuurlijk te blijven.
    */
   windDirection: number
+  /**
+   * Hoe hard de lucht zelf met `windDirection` mee zakt, in schermhoogtes per
+   * simulatieseconde. Op 0 hangt de nagloed stil waar hij gemaakt is.
+   *
+   * Dit staat los van de vleugelslag: die geeft de wind zijn richting, dit geeft
+   * hem zijn tempo. Alleen de nagloed drijft mee, niet het snelheidsveld, dus
+   * de oplosser merkt er niets van.
+   */
+  windSpeed: number
   strokeBias: number
   strokeSteering: number
   /** penseelstraal in uv bij volle snelheid */
@@ -261,11 +305,49 @@ export type PaintingConfig = {
   paletteFrequency: [number, number, number]
   /** duur van de intro-fade, in seconden */
   revealDuration: number
+
+  /**
+   * Slierten lucht die met de wind langstrekken, zodat je door iets heen zweeft
+   * in plaats van in het niets te hangen.
+   *
+   * Dit is een beeldlaag en geen vloeistof: de oplosser merkt er niets van. Het
+   * moest ook wel buiten de nagloed blijven, want die buffer voedt zichzelf en
+   * daar zou dit zich per frame opstapelen.
+   */
+  /** hoeveel van de sliertkleur er overheen komt op zijn dichtst. 0 zet ze uit */
+  wispAmount: number
+  /** de tint van een sliert. Moet genoeg van `background` verschillen om te
+      zien: de doelachtergrond van het object scheelt maar 4% en dat is te
+      weinig, ook op volle sterkte */
+  wispColor: string
+  /** hoe grof de slierten zijn; hoger is fijner en drukker */
+  wispScale: number
+  /** de drempel die er slierten van maakt in plaats van een deken: hoger laat
+      alleen de toppen van de ruis door en dus meer leegte ertussen */
+  wispGap: number
+  /** hoe snel ze langstrekken, in schermhoogtes per seconde */
+  wispSpeed: number
+  /** hoe ver de stroming de mist meesleept. Dit is niet dezelfde vervorming als
+      `warp`: die boog het beeld van het object krom, dit verschuift alleen waar
+      de mist hangt */
+  wispWarp: number
+  /** hoe hard de stroming de mist wegblaast. Op 1 is een volle veeg precies
+      genoeg om schoon te vegen, hoger maakt het spoor breder */
+  wispClear: number
 }
 
 export type FluidSceneConfig = {
   /** achtergrond van de pagina */
   background: string
+  /**
+   * Wat een klik doet: een golf door het beeld, een nieuwe kleurfase, en een
+   * stil object dat naar de cursor toe gestuurd wordt. Staat standaard uit, dus
+   * de scene reageert alleen op beweging.
+   *
+   * De plek van de tik wordt los hiervan altijd onthouden, anders weet een
+   * aanraakscherm nooit waar je zit.
+   */
+  clickImpulse: boolean
   object: ObjectConfig
   simulation: SimulationConfig
   painting: PaintingConfig

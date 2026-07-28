@@ -14,11 +14,14 @@ import type { FluidSceneConfig } from './types'
  */
 export const defaultConfig: FluidSceneConfig = {
   background: '#f4f4f4',
+  clickImpulse: false,
 
   object: {
     color: '#6f7278',
     background: '#efefef',
-    length: 1.25,
+    /* over de langste as, en dat is bij deze draak zijn spanwijdte. Het beeld is
+       twee eenheden hoog, dus hier vult hij ruim driekwart van de hoogte. */
+    length: 1.5,
     /* de rug naar de camera, en een halve slag zodat de kop naar boven wijst */
     flipped: false,
     spin: 180,
@@ -132,6 +135,30 @@ export const defaultConfig: FluidSceneConfig = {
          0,25   punt 71%   links-rechts 68%, dan is het een slag geworden */
     soarLift: 0.09,
     soarRate: 0.35,
+
+    /* De duik. Om de zoveel vleugelslagen laat hij zich vallen en komt hij van
+       opzij weer binnen.
+
+       In slagen aftellen en niet in seconden, want dat is het verschil tussen
+       een draak die af en toe duikt en een metronoom: hij slaat harder als hij
+       vooruit moet, dus in drukke stukken komt de duik eerder. Deze clip doet
+       vier slagen per rondgang van 3,3 seconde, dus tien slagen is grofweg acht
+       seconden als hij doorwerkt, en langer als hij veel zweeft.
+
+       Om te testen op 10; later hoger. Op 0 duikt hij nooit.
+
+       diveAcceleration is een versnelling: hij begint traag en valt steeds
+       harder, zoals loslaten. Op 1,8 is hij in ongeveer een seconde onder de
+       rand. */
+    diveEvery: 10,
+    diveSpeed: 1.1,
+    diveAcceleration: 9,
+    diveDepth: 12,
+    pitchRate: 3.5,
+    fogDepth: 1.6,
+    awayTime: 5,
+    enterRate: 1.1,
+    enterGap: 0.08,
   },
 
   simulation: {
@@ -163,6 +190,20 @@ export const defaultConfig: FluidSceneConfig = {
     strokeBias: 0.92,
     strokeSteering: 0.55,
 
+    /* De lucht zakt zelf ook, zodat je erdoorheen zweeft in plaats van erin stil
+       te hangen. De oplosser draait op een vaste stap per frame, dus reken je
+       dit om naar seconden op het scherm met stap 0,008 bij 60 fps:
+
+         0,08   een schermhoogte in 26 s, nauwelijks te betrappen
+         0,12   in 17 s   <- nu
+         0,25   in  8 s, je merkt dat het beweegt
+         0,50   in  4 s, dan is het geen zweven meer maar vallen
+
+       Per stap is dat een halve texel op een buffer van 1024, dus er wordt
+       zachtjes geïnterpoleerd en niet gestapt. Ver boven de 0,5 gaat dat wel
+       tellen: dan sleept elke stap het spoor een stukje uit. */
+    windSpeed: 0.12,
+
     /* cursorSize 350, gedeeld door de schermruimtemaat 1,804 en genormaliseerd
        op een buffer van 1024 met basis 512, maal 0,5. De straal schaalt met de
        snelheid tussen 0,2 en 0,8 van deze waarde. */
@@ -187,5 +228,46 @@ export const defaultConfig: FluidSceneConfig = {
     paletteAmplitude: [0.5, 0.5, 0.5],
     paletteFrequency: [1, 1, 1],
     revealDuration: 0.5,
+
+    /* De luchtslierten. Ze leggen hun eigen kleur over het beeld in plaats van
+       het object te onthullen, want onthullen werkt alleen waar het object
+       staat en dat is precies niet waar je lucht wil zien.
+
+       De kleur moet daarom genoeg van `background` verschillen. Doorgerekend in
+       lineaire ruimte, want daar wordt in gemengd, en dan naar sRGB terug om te
+       weten of je het ziet:
+
+         #efefef, de doelachtergrond   4% verschil, op 0,3 nog geen 1/255, weg
+         #e6e6e8                      11% verschil, op 0,3 zo'n 4/255
+         #d8d8dc                      21% verschil, op 0,3 zo'n 7/255, duidelijk
+
+       En met de kleur van nu, wat `wispAmount` op zijn dichtst oplevert:
+
+         0,30   4/255, duidelijk aanwezig
+         0,15   2/255, je merkt het maar het dringt zich niet op   <- nu
+         0,08   1/255, op de grens van wat een scherm nog toont
+
+       Het meeslepen en het wegblazen hieronder schalen hiermee mee, want die
+       werken op de mist die er is. Zachter zetten doe je dus hier, in één getal.
+
+       wispSpeed staat in schermhoogtes per seconde en loopt op de framedelta,
+       niet op de vaste stap van de oplosser: 0,1 is een schermhoogte in tien
+       seconden. */
+    wispAmount: 0.15,
+    wispColor: '#e6e6e8',
+    wispScale: 1.2,
+    wispGap: 0.55,
+    wispSpeed: 0.1,
+
+    /* Hoe de mist op de stroming reageert. Zonder deze twee scrollt hij alleen
+       maar langs en trekt hij zich van de cursor en de draak niets aan.
+
+       wispWarp sleept mee. Ruim boven `warp` mag: dat getal boog het beeld van
+       de draak zelf krom en dat oogde als water, dit verschuift alleen de mist.
+       wispClear veegt schoon. Op 1 is een volle veeg precies genoeg; iets
+       eronder blijft er een waas staan in het spoor, wat natuurlijker leest dan
+       een harde snede. */
+    wispWarp: 0.25,
+    wispClear: 0.9,
   },
 }

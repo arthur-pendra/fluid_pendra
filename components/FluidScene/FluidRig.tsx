@@ -5,6 +5,7 @@ import { createPortal, useFrame, useThree } from '@react-three/fiber'
 import { useFBO } from '@react-three/drei'
 import {
   Color,
+  Fog,
   PerspectiveCamera,
   Quaternion,
   Scene,
@@ -21,10 +22,12 @@ import {
   ndcToUv,
   planeDirection,
   planeHalfSize,
+  screenToSimulationDirection,
   screenToSimulationUv,
   uvToPlane,
 } from './projection'
 import { BASE_HEADING, createFlightState, stepFlight } from './flight'
+import { createDiveState, diveFoldsWings, diveHoldsControl, stepDive } from './dive'
 import { strokeForce, windVector } from './strokeForce'
 import { approach, lookYaw, neckWeights, soarAngle, tailAngle } from './pose'
 import { createThrustState, stepThrust } from './thrust'
@@ -41,6 +44,9 @@ const VISIBLE_HEIGHT = 2
 
 /** een enkele stap van de cursor mag de vloeistof niet wegblazen */
 const MAX_STEP = 0.05
+
+/** hoe ver achter het vliegvlak de fog pas begint, in wereldeenheden */
+const FOG_LEAD = 0.25
 
 type FluidRigProps = {
   config: FluidSceneConfig
@@ -71,7 +77,22 @@ const FluidRig = ({ config, modelUrl, paused, pointer }: FluidRigProps) => {
 
   useEffect(() => {
     objectScene.background = new Color(config.object.background)
-  }, [objectScene, config.object.background])
+
+    /* Diepte-fog in dezelfde kleur als de achtergrond van deze target, zodat een
+       duikende draak oplost in plaats van klein maar scherp te blijven hangen.
+       MeshBasicMaterial doet standaard aan fog mee, dus dit werkt zonder dat het
+       unlit materiaal iets hoeft te weten.
+
+       Begint een eindje áchter het vliegvlak: hij is een kwart eenheid dik, en
+       zou de fog op de camera-afstand zelf beginnen dan zou hij ook tijdens het
+       gewone vliegen al een zweem meekrijgen. */
+    const start = distance + FOG_LEAD
+    objectScene.fog = new Fog(
+      config.object.background,
+      start,
+      start + config.object.fogDepth,
+    )
+  }, [objectScene, config.object.background, config.object.fogDepth, distance])
 
   useEffect(() => {
     objectCamera.aspect = size.width / Math.max(size.height, 1)
@@ -98,6 +119,14 @@ const FluidRig = ({ config, modelUrl, paused, pointer }: FluidRigProps) => {
       uTintAmount: { value: config.painting.tintAmount },
       uWarp: { value: config.painting.warp },
       uRippleStrength: { value: config.painting.rippleStrength },
+      uNoise: { value: null },
+      uWispOffset: { value: new Vector2() },
+      uWispScale: { value: config.painting.wispScale },
+      uWispAmount: { value: config.painting.wispAmount },
+      uWispGap: { value: config.painting.wispGap },
+      uWispColor: { value: new Color(config.painting.wispColor) },
+      uWispWarp: { value: config.painting.wispWarp },
+      uWispClear: { value: config.painting.wispClear },
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [],
@@ -114,6 +143,13 @@ const FluidRig = ({ config, modelUrl, paused, pointer }: FluidRigProps) => {
   const clickedAt = useRef<number | null>(null)
   const lastClick = useRef<number | null>(null)
   const scratch = useRef(new Vector3())
+  /* de duik: telt slagen af en neemt tijdens de manoeuvre de plek over */
+  const dive = useRef(createDiveState())
+  const beats = useRef(0)
+  const seenBeats = useRef(0)
+  const folding = useRef(false)
+  /* hoe ver de luchtslierten opgeschoven zijn; loopt door zolang de scene loopt */
+  const wisp = useRef(new Vector2())
 
   /* de procedurele laag: eigen klok, de gedempte kopdraai, en één quaternion die
      hergebruikt wordt zodat er per frame niets gealloceerd wordt */
@@ -191,17 +227,44 @@ const FluidRig = ({ config, modelUrl, paused, pointer }: FluidRigProps) => {
         /* zijwaarts volgt hij de cursor; staat die niet in beeld, dan is het
            midden het doel. Naar voren en achteren doet de cursor (nog) niets. */
         const cursor = input.uv ? uvToPlane(input.uv, halfWidth, halfHeight) : null
+        const reach = {
+          x: config.object.reachSide * halfWidth,
+          y: config.object.reachAhead * halfHeight,
+        }
+
+        /* Tijdens de manoeuvre houdt de duik de cursor buiten de deur, anders
+           komt hij het beeld nooit uit. Het vliegen loopt wel gewoon door, met
+           het midden als doel, zodat hij bij terugkomst niet ergens vandaan
+           hoeft te springen. */
+        const holding = diveHoldsControl(dive.current)
+
         flight.current = stepFlight(
           flight.current,
           config.object,
           thrust.current.boost,
-          cursor,
-          {
-            x: config.object.reachSide * halfWidth,
-            y: config.object.reachAhead * halfHeight,
-          },
+          holding ? null : cursor,
+          reach,
           delta,
         )
+
+        const advanced = beats.current - seenBeats.current
+        seenBeats.current = beats.current
+
+        dive.current = stepDive(dive.current, config.object, {
+          beatsAdvanced: advanced,
+          flying: flight.current.position,
+          bounds: { x: halfWidth, y: halfHeight },
+          delta,
+          random: Math.random,
+        })
+
+        folding.current = diveFoldsWings(dive.current)
+
+        /* na de manoeuvre neemt het vliegen het weer over vanaf waar de duik
+           hem heeft afgeleverd, anders klapt hij terug naar zijn oude plek */
+        if (diveHoldsControl(dive.current)) {
+          flight.current = { ...flight.current, position: { ...dive.current.place } }
+        }
       } else {
         motion.current = stepMotion(motion.current, config.object, delta)
       }
@@ -219,7 +282,16 @@ const FluidRig = ({ config, modelUrl, paused, pointer }: FluidRigProps) => {
     const place = anchored ? flight.current.position : motion.current.visible
 
     if (objectRef.current) {
-      objectRef.current.position.set(place.x, config.object.height, place.y)
+      /* `depth` gaat langs de kijkas: de camera staat recht boven het object, dus
+         duiken is van de camera af en niet over het scherm. Perspectief maakt
+         hem daarmee vanzelf kleiner. */
+      objectRef.current.position.set(
+        place.x,
+        config.object.height + (anchored ? dive.current.depth : 0),
+        place.y,
+      )
+      /* neus omlaag om de as die op het scherm horizontaal loopt */
+      objectRef.current.rotation.x = anchored ? (dive.current.pitch * Math.PI) / 180 : 0
       /* door `spin` staat het model al met zijn kop omhoog op het scherm, en dat
          is de vaste koers, dus wat de kanteling erbij doet is meteen de draai */
       objectRef.current.rotation.y = anchored ? (flight.current.bank * Math.PI) / 180 : 0
@@ -430,8 +502,18 @@ const FluidRig = ({ config, modelUrl, paused, pointer }: FluidRigProps) => {
     gl.render(objectScene, objectCamera)
     gl.setRenderTarget(null)
 
-    /* 2. de vloeistof een stap verder */
-    if (!frozen) simulation.step(gl)
+    /* 2. de vloeistof een stap verder.
+       De lucht zelf zakt met `windDirection` mee, los van de draak: die kantelt
+       binnen een stroming die gewoon doorloopt, dus hier staat bewust niet het
+       meekantelende `windDegrees`. Ongenormaliseerd omgerekend, want dan is de
+       eenheid van `windSpeed` een schermhoogte en niet een stuk buffer. */
+    const windRadians = (sim.windDirection * Math.PI) / 180
+    const air = screenToSimulationDirection(
+      { x: Math.cos(windRadians), y: Math.sin(windRadians) },
+      ratio,
+    )
+    const carry = sim.windSpeed * sim.timeStep
+    if (!frozen) simulation.step(gl, { x: air.x * carry, y: air.y * carry })
 
     /* 3. de eindpass */
     const painting = paintingRef.current
@@ -447,6 +529,24 @@ const FluidRig = ({ config, modelUrl, paused, pointer }: FluidRigProps) => {
       uniforms.uTintAmount.value = config.painting.tintAmount
       uniforms.uWarp.value = config.painting.warp
       uniforms.uRippleStrength.value = config.painting.rippleStrength
+
+      /* De slierten schuiven mee met de wind. De uv de andere kant op bewegen
+         laat het beeld de goede kant op trekken: wat boven je hing komt naar je
+         toe. Dit loopt op de framedelta en niet op de vaste stap van de
+         oplosser, want het is beeld en geen vloeistof. */
+      if (!frozen) {
+        const rate = config.painting.wispSpeed * delta
+        wisp.current.x -= Math.cos(windRadians) * rate
+        wisp.current.y -= Math.sin(windRadians) * rate
+      }
+      uniforms.uNoise.value = simulation.noise
+      uniforms.uWispOffset.value.copy(wisp.current)
+      uniforms.uWispScale.value = config.painting.wispScale
+      uniforms.uWispAmount.value = config.painting.wispAmount
+      uniforms.uWispGap.value = config.painting.wispGap
+      uniforms.uWispColor.value.set(config.painting.wispColor)
+      uniforms.uWispWarp.value = config.painting.wispWarp
+      uniforms.uWispClear.value = config.painting.wispClear
       uniforms.uShockwaveProgress.value = shockwaveRunning
         ? elapsedSinceClick / config.simulation.shockwaveDuration
         : 1
@@ -466,6 +566,8 @@ const FluidRig = ({ config, modelUrl, paused, pointer }: FluidRigProps) => {
           modelUrl={modelUrl}
           frozen={frozen}
           beating={beating}
+          beats={beats}
+          folding={folding}
           onStirSurface={handleStirSurface}
         />,
         objectScene,

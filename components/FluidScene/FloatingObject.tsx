@@ -1,6 +1,6 @@
 'use client'
 
-import { Component, Suspense, forwardRef, useEffect, useMemo, type ReactNode } from 'react'
+import { Component, Suspense, forwardRef, useEffect, useMemo, useRef, type ReactNode } from 'react'
 import { useFrame } from '@react-three/fiber'
 import { useAnimations, useGLTF } from '@react-three/drei'
 import {
@@ -16,7 +16,7 @@ import {
   type SkinnedMesh,
 } from 'three'
 import { SkeletonUtils } from 'three/examples/jsm/Addons.js'
-import { beatProfile, clipRate, soarPhases } from './beat'
+import { beatProfile, clipRate, foldPhase, soarPhases } from './beat'
 import { readRig } from './rig'
 import { pickStirPoints } from './stirSurface'
 import type { ObjectConfig, PointMotion, StirSurface } from './types'
@@ -134,10 +134,11 @@ const measureSurface = (
   motion: PointMotion[]
   box: Box3
   speeds: number[]
+  spans: number[]
 } => {
   const mesh = findSkinnedMesh(root)
   const box = new Box3()
-  if (!mesh) return { mesh: null, vertices: [], motion: [], box, speeds: [] }
+  if (!mesh) return { mesh: null, vertices: [], motion: [], box, speeds: [], spans: [] }
 
   const total = mesh.geometry.getAttribute('position').count
   const vertices: number[] = []
@@ -191,7 +192,23 @@ const measureSurface = (
     return tracks.reduce((sum, points) => sum + points[step].distanceTo(points[next]), 0)
   }) ?? []
 
-  return { mesh, vertices, motion, box, speeds }
+  /* De spanwijdte per moment in de clip, over de as waar de vleugels overheen
+     staan. Dat is de langste as van het model, dus de as waarop het passen ook
+     al gebeurt. Hier vindt beat.ts de stand waarin de vleugels ingeklapt zijn. */
+  const size = box.getSize(new Vector3())
+  const widest: 'x' | 'y' | 'z' = size.x >= size.y && size.x >= size.z ? 'x' : size.y >= size.z ? 'y' : 'z'
+  const spans = tracks[0]?.map((_, step) => {
+    let low = Infinity
+    let high = -Infinity
+    for (const points of tracks) {
+      const value = points[step][widest]
+      if (value < low) low = value
+      if (value > high) high = value
+    }
+    return high - low
+  }) ?? []
+
+  return { mesh, vertices, motion, box, speeds, spans }
 }
 
 const Sphere = ({ config }: { config: ObjectConfig }) => (
@@ -207,10 +224,14 @@ type ModelProps = {
   frozen: boolean
   /** of de vleugels moeten werken, 0 tot 1; stuurt de klok van de clip aan */
   beating?: React.RefObject<number>
+  /** telt hele vleugelslagen op; dive.ts telt daarmee af */
+  beats?: React.RefObject<number>
+  /** vleugels ingeklapt houden in plaats van gespreid, tijdens de duik */
+  folding?: React.RefObject<boolean>
   onStirSurface: (surface: StirSurface) => void
 }
 
-const Model = ({ url, config, frozen, beating, onStirSurface }: ModelProps) => {
+const Model = ({ url, config, frozen, beating, beats, folding, onStirSurface }: ModelProps) => {
   /* draco staat uit: het model is met meshopt gecomprimeerd, en die decoder zit
      in de bundel in plaats van achter een CDN */
   const { scene, animations } = useGLTF(url, false)
@@ -226,18 +247,24 @@ const Model = ({ url, config, frozen, beating, onStirSurface }: ModelProps) => {
     const clip = animations[0]
     if (!clip) {
       fitToBox(object, new Box3().setFromObject(object), orient)
-      return { object, speeds: [], surface: { mesh: null, vertices: [], rig: null } as StirSurface }
+      return {
+        object,
+        speeds: [],
+        spans: [],
+        surface: { mesh: null, vertices: [], rig: null } as StirSurface,
+      }
     }
 
     /* eerst opmeten met het object nog op identiteit, dan passen op wat er
        daadwerkelijk gemeten is: de opgemeten box is de enige die klopt */
-    const { mesh, vertices, motion, box, speeds } = measureSurface(object, clip)
+    const { mesh, vertices, motion, box, speeds, spans } = measureSurface(object, clip)
     fitToBox(object, box, orient)
 
     const picked = pickStirPoints(motion, config.stirPoints)
     return {
       object,
       speeds,
+      spans,
       surface: { mesh, vertices: picked.map((slot) => vertices[slot]), rig: readRig(object) },
     }
   }, [
@@ -283,6 +310,10 @@ const Model = ({ url, config, frozen, beating, onStirSurface }: ModelProps) => {
     [prepared.speeds, config.glideHold],
   )
   const soars = useMemo(() => soarPhases(prepared.speeds), [prepared.speeds])
+  /* de stand waarin de vleugels tegen het lijf liggen; daar remt hij op af als
+     hij duikt, in plaats van op de gespreide zweefstand */
+  const folded = useMemo(() => [foldPhase(prepared.spans)], [prepared.spans])
+  const lastPhase = useRef<number | null>(null)
 
   useFrame(() => {
     if (frozen) {
@@ -296,11 +327,28 @@ const Model = ({ url, config, frozen, beating, onStirSurface }: ModelProps) => {
       return
     }
 
+    const phase = action.time / duration
+    const holding = folding?.current === true
+
+    /* Hele vleugelslagen tellen, zodat de duik op een slaggrens kan beginnen.
+       Een slag is af zodra de klok een zweefstand passeert: dat zijn precies de
+       dalen tussen de slagen, en er is er per slag één. */
+    if (beats && lastPhase.current !== null && !holding) {
+      const advanced = ((phase - lastPhase.current) % 1 + 1) % 1
+      if (advanced > 0 && advanced < 0.5) {
+        for (const soar of soars) {
+          const since = ((soar - lastPhase.current) % 1 + 1) % 1
+          if (since > 0 && since <= advanced) beats.current += 1
+        }
+      }
+    }
+    lastPhase.current = phase
+
     mixer.timeScale = clipRate(
       profile,
-      soars,
-      action.time / duration,
-      beating?.current ?? 1,
+      holding ? folded : soars,
+      phase,
+      holding ? 0 : beating?.current ?? 1,
       config.soarBrake,
     )
   })
@@ -335,11 +383,15 @@ type FloatingObjectProps = {
   modelUrl?: string
   frozen: boolean
   beating?: React.RefObject<number>
+  /** telt hele vleugelslagen op; dive.ts telt daarmee af */
+  beats?: React.RefObject<number>
+  /** vleugels ingeklapt houden in plaats van gespreid, tijdens de duik */
+  folding?: React.RefObject<boolean>
   onStirSurface: (surface: StirSurface) => void
 }
 
 const FloatingObject = forwardRef<Group, FloatingObjectProps>(
-  ({ config, modelUrl, frozen, beating, onStirSurface }, ref) => {
+  ({ config, modelUrl, frozen, beating, beats, folding, onStirSurface }, ref) => {
     const fallback = <Sphere config={config} />
 
     return (
@@ -352,6 +404,8 @@ const FloatingObject = forwardRef<Group, FloatingObjectProps>(
                 config={config}
                 frozen={frozen}
                 beating={beating}
+                beats={beats}
+                folding={folding}
                 onStirSurface={onStirSurface}
               />
             </Suspense>

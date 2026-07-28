@@ -123,6 +123,29 @@ export const soarPhases = (speeds: number[]): number[] => {
 }
 
 /**
+ * De plek in de clip waar de vleugels het strakst tegen het lijf liggen.
+ *
+ * Dat is een ándere vraag dan die van `soarPhases`, en het verschil is precies
+ * waar het om gaat: zweven is de vleugel op zijn wijdst en zo goed als stil,
+ * ingeklapt is hem op zijn smalst. Op snelheid zoeken vindt de eerste, dus voor
+ * de tweede wordt de spanwijdte zelf opgemeten.
+ *
+ * `spans` is per bemonsteringspunt de breedte van het model over de as waar de
+ * vleugels overheen staan.
+ */
+export const foldPhase = (spans: number[]): number => {
+  if (spans.length === 0) return 0
+
+  let narrowest = 0
+  for (let index = 1; index < spans.length; index++) {
+    if (spans[index] < spans[narrowest]) narrowest = index
+  }
+
+  /* midden op het bemonsteringsvak, net als bij de zweefstanden */
+  return (narrowest + 0.5) / spans.length
+}
+
+/**
  * De klok van de clip op een plek erin.
  *
  * Werken de vleugels, dan is dat gewoon het profiel: de clip loopt zijn slagen
