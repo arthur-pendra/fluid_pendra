@@ -37,6 +37,14 @@ const DebugPanel = ({ onChange }: DebugPanelProps) => {
       { collapsed: false },
     ),
 
+    stuwkracht: folder(
+      {
+        thrustForce: { value: object.thrustForce, min: 0, max: 0.4, step: 0.005 },
+        thrustResponse: { value: object.thrustResponse, min: 0.5, max: 30, step: 0.5 },
+      },
+      { collapsed: false },
+    ),
+
     stroming: folder(
       {
         cursorForce: { value: simulation.cursorForce, min: 0, max: 300, step: 1 },
@@ -75,6 +83,8 @@ const DebugPanel = ({ onChange }: DebugPanelProps) => {
         followSpeed: controls.followSpeed,
         driftRadius: controls.driftRadius,
         driftSpeed: controls.driftSpeed,
+        thrustForce: controls.thrustForce,
+        thrustResponse: controls.thrustResponse,
       },
       simulation: {
         ...simulation,

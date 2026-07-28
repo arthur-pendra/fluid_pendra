@@ -18,11 +18,13 @@ import { createMotionState, stepMotion, stirPoints } from './objectMotion'
 import {
   distanceForHeight,
   ndcToUv,
+  planeDirection,
   planeHalfSize,
   screenToSimulationUv,
   uvToPlane,
 } from './projection'
 import { strokeForce, windVector } from './strokeForce'
+import { createThrustState, stepThrust } from './thrust'
 import { fullscreenVertexShader } from './shaders/fullscreen'
 import { paintingFragmentShader } from './shaders/painting'
 import type { FluidSceneConfig, StirSurface, Vec2 } from './types'
@@ -101,6 +103,7 @@ const FluidRig = ({ config, modelUrl, paused, pointer }: FluidRigProps) => {
 
   /* toestand die per frame verandert en geen render hoeft te veroorzaken */
   const motion = useRef(createMotionState())
+  const thrust = useRef(createThrustState())
   const reveal = useRef(0)
   const travelled = useRef<number[]>([])
   const clickedAt = useRef<number | null>(null)
@@ -159,16 +162,25 @@ const FluidRig = ({ config, modelUrl, paused, pointer }: FluidRigProps) => {
 
     if (!frozen) motion.current = stepMotion(motion.current, config.object, delta)
 
+    const sim = config.simulation
+
     /* een model dat zichzelf roert hoeft niet rond te dwalen om zichtbaar te
        blijven, dus dat blijft in het midden staan */
     const surface = stir.current
     const anchored = surface.mesh !== null && surface.vertices.length > 0
 
+    /* een geanimeerd model staat niet stil op de oorsprong maar veert er
+       omheen: elke vleugelslag zet het naar voren, tegen de wind in. De uitslag
+       komt uit de meting van de vórige frame, want die volgt pas verderop uit
+       de roerpunten; op een frame na is dat niet te zien. */
+    const heading = planeDirection(sim.windDirection)
+    const surge = thrust.current.offset
+
     if (objectRef.current) {
       objectRef.current.position.set(
-        anchored ? 0 : motion.current.visible.x,
+        anchored ? -heading.x * surge : motion.current.visible.x,
         config.object.height,
-        anchored ? 0 : motion.current.visible.y,
+        anchored ? -heading.y * surge : motion.current.visible.y,
       )
     }
 
@@ -182,24 +194,24 @@ const FluidRig = ({ config, modelUrl, paused, pointer }: FluidRigProps) => {
     const shockwaveRunning =
       elapsedSinceClick > 0 && elapsedSinceClick < config.simulation.shockwaveDuration
 
-    const sim = config.simulation
-
     /* `wind` is de as waarlangs een vleugelslag asymmetrisch wordt gemaakt; de
-       cursor en een drijvend object krijgen hem niet, die hebben geen slag */
+       cursor en een drijvend object krijgen hem niet, die hebben geen slag.
+       Geeft terug hoeveel van deze slag benedenwinds ging, want dat is meteen
+       de stuwkracht die de draak zelf vooruit zet. */
     const applyBrush = (
       index: number,
       screenUv: Vec2Like | null,
       gain: number,
       wind: Vec2 | null,
-    ) => {
+    ): number => {
       const brush = brushes[index]
-      if (!brush) return
+      if (!brush) return 0
 
       if (!screenUv || frozen) {
         brush.force.set(0, 0)
         brush.intensity = 0
         brush.circular = 0
-        return
+        return 0
       }
 
       /* naar de ruimte waar de eindpass uit leest, anders staat het spoor
@@ -213,6 +225,10 @@ const FluidRig = ({ config, modelUrl, paused, pointer }: FluidRigProps) => {
       brush.force.subVectors(brush.center, brush.lastCenter)
       const step = brush.force.length()
       if (step > MAX_STEP) brush.force.multiplyScalar(MAX_STEP / step)
+
+      /* opmeten vóór het vormen: dit is de rauwe slag, en daar hangt de
+         stuwkracht aan. Na het vormen zou de meting zichzelf lezen. */
+      const downwind = wind ? Math.max(0, brush.force.x * wind.x + brush.force.y * wind.y) : 0
 
       /* de slag mee duwt, de slag terug glijdt. Bewust vóór `gain` en met
          `step` los ervan: straal en intensiteit blijven hangen aan hoe hard de
@@ -237,6 +253,8 @@ const FluidRig = ({ config, modelUrl, paused, pointer }: FluidRigProps) => {
       brush.intensity = Math.min(1, travelled.current[index] * sim.intensityVariation)
 
       brush.circular = index === 0 && shockwaveRunning ? elapsedSinceClick : 0
+
+      return downwind
     }
 
     applyBrush(0, input.uv, sim.cursorForce, null)
@@ -247,6 +265,7 @@ const FluidRig = ({ config, modelUrl, paused, pointer }: FluidRigProps) => {
       objectScene.updateMatrixWorld(true)
 
       const wind = windVector(sim.windDirection, ratio)
+      let downwind = 0
 
       for (let index = 0; index < config.object.stirPoints; index++) {
         const vertex = surface.vertices[index]
@@ -256,7 +275,20 @@ const FluidRig = ({ config, modelUrl, paused, pointer }: FluidRigProps) => {
         }
         surface.mesh.getVertexPosition(vertex, scratch.current)
         surface.mesh.localToWorld(scratch.current).project(objectCamera)
-        applyBrush(index + 1, ndcToUv(scratch.current.x, scratch.current.y), sim.objectForce, wind)
+        downwind += applyBrush(
+          index + 1,
+          ndcToUv(scratch.current.x, scratch.current.y),
+          sim.objectForce,
+          wind,
+        )
+      }
+
+      /* de slagkracht van deze frame: gemiddeld per roerpunt zodat het aantal
+         punten geen knop wordt, en per seconde zodat de framerate dat ook niet
+         is. Wat de draak hiermee doet leest de volgende frame terug. */
+      if (!frozen && delta > 0) {
+        const push = downwind / Math.max(1, config.object.stirPoints) / delta
+        thrust.current = stepThrust(thrust.current, push, config.object, delta)
       }
     } else {
       const points = stirPoints(motion.current, config.object.stirPoints, config.object.length)

@@ -19,7 +19,33 @@ export type PointMotion = {
   amplitude: number
 }
 
-export type ObjectConfig = {
+/**
+ * Hoe hard een vleugelslag de draak vooruit zet, zie thrust.ts. Alleen voor een
+ * geanimeerd model: een drijvend object volgt de cursor en heeft geen slag.
+ *
+ * De as waarlangs dit gebeurt is `simulation.windDirection`, tegengesteld: waar
+ * de wind naartoe gaat, gaat de draak vandaan.
+ */
+export type ThrustConfig = {
+  /**
+   * Hoe ver de draak op het hoogtepunt van een slag naar voren komt, in
+   * wereldeenheden. Dit is meteen de bovengrens van de uitslag, dus hij kan
+   * hiermee niet uit beeld raken. Het zichtbare vlak is twee eenheden hoog, dus
+   * 0,05 is een veertigste van het beeld.
+   */
+  thrustForce: number
+  /**
+   * Hoe snel de draak de slag volgt, per seconde. Laag geeft hem gewicht en
+   * laat hem achterlopen; hoog plakt hem op de slag en dan oogt het mechanisch.
+   * Rond de slagfrequentie is een goed begin.
+   */
+  thrustResponse: number
+  /** hoe snel de gemeten piek meezakt met de clip, zodat `thrustForce` in
+      wereldeenheden staat en niet aan dit model vasthangt */
+  thrustAdapt: number
+}
+
+export type ObjectConfig = ThrustConfig & {
   /** kleur van het ingebouwde object; een eigen model houdt zijn eigen kleur */
   color: string
   /** achtergrond van de render target, net iets donkerder dan de pagina */

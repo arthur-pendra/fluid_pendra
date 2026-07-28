@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   distanceForHeight,
   ndcToUv,
+  planeDirection,
   planeHalfSize,
   screenToSimulationDirection,
   screenToSimulationUv,
@@ -67,6 +68,29 @@ describe('planeHalfSize', () => {
 
     expect(halfHeight).toBeCloseTo(1, 6)
     expect(halfWidth).toBeCloseTo(2, 6)
+  })
+})
+
+describe('planeDirection', () => {
+  it('legt rechts op het scherm op de x-as', () => {
+    const right = planeDirection(0)
+    expect(right.x).toBeCloseTo(1, 6)
+    expect(right.y).toBeCloseTo(0, 6)
+  })
+
+  it('legt omhoog op het scherm op -z, want daar kijkt de camera langs', () => {
+    const up = planeDirection(90)
+    expect(up.x).toBeCloseTo(0, 6)
+    expect(up.y).toBeCloseTo(-1, 6)
+  })
+
+  it('loopt gelijk met uvToPlane, anders wijst de draak de verkeerde kant op', () => {
+    /* een stap naar boven op het scherm hoort in beide dezelfde kant op te gaan */
+    const centre = uvToPlane({ x: 0.5, y: 0.5 }, 1, 1)
+    const higher = uvToPlane({ x: 0.5, y: 0.6 }, 1, 1)
+    const up = planeDirection(90)
+
+    expect(Math.sign(higher.y - centre.y)).toBe(Math.sign(up.y))
   })
 })
 

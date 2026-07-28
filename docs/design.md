@@ -159,6 +159,46 @@ op kijkt staat nergens in een glb, en de richting waarin een vleugel het hardst
 veegt is bij een symmetrische animatie niet te onderscheiden van zijn
 tegengestelde.
 
+### Stuwkracht uit de slag
+
+De draak stond stil op de oorsprong. Nu zet elke vleugelslag hem een stukje naar
+voren, tegen de windas in. Meten hoeft daar niet apart voor: voor de wind wordt
+per roerpunt al uitgerekend hoeveel van zijn beweging benedenwinds gaat, en dat
+signaal piekt tijdens de neerslag en valt weg tijdens de terugslag. Dezelfde
+derde wet die de wind verklaart, andersom gelezen.
+
+Bij de vis van Immersive Garden loopt dit precies omgekeerd, en dat is het
+noemen waard omdat het de voor de hand liggende route is. Daar stuurt een boid
+de snelheid aan en volgt de staartslag daaruit — `oscillationPower` is niets
+anders dan de snelheid maal een factor, en amplitude en frequentie zijn er
+remaps van. Dat kan omdat die vis procedureel buigt over drie gewrichten. Onze
+draak brengt een gebakken clip mee, dus daar valt niets uit te sturen: de slag
+ligt vast en de stuwkracht moet er juist uit afgeleid worden.
+
+De eerste opzet was de natuurkundige: kracht bij een snelheid optellen,
+weerstand eraf, een veer die terugtrekt naar het midden. Doorgerekend op een
+slag van anderhalve hertz gaf dat 0,3% beeldhoogte aan wiebel op een uitslag van
+4% — de draak ging een stukje vooruit staan en bleef daar hangen. Dat is geen
+kwestie van afstellen. Massa met een veer is een laagdoorlaat van de tweede
+orde, en die dempt alles boven zijn eigen frequentie met het kwadraat van de
+verhouding; de slag zit daar ver boven, dus de losse duwtjes middelen uit tot
+een constante verschuiving. Zichtbaar krijgen zou betekenen de veer op de
+slagfrequentie afstemmen, en die staat in de clip en nergens in de code.
+
+De uitslag volgt de slag daarom rechtstreeks, met vertraging. Dat is
+frequentie-onafhankelijk: doorgerekend over 0,6 tot 3 Hz blijft de wiebel tussen
+0,9% en 2,3% van de beeldhoogte, en hij loopt per slag vrijwel helemaal terug
+naar nul in plaats van te blijven staan. De vertraging is wat het als duwen laat
+lezen in plaats van als pulseren — zonder is de uitslag een kopie van de slag.
+De uitslag kan per constructie nooit voorbij `thrustForce` komen, dus er is geen
+grens nodig om de draak in beeld te houden.
+
+De gemeten slagkracht wordt afgezet tegen zijn eigen langzaam zakkende piek. Hoe
+hard een vleugelpunt over het scherm veegt hangt af van de clip, de schaal van
+het model en het aantal roerpunten, en een knop die daaraan hangt moet je bij
+elk model opnieuw zoeken. Genormaliseerd staat `thrustForce` gewoon in
+wereldeenheden.
+
 ### Twee dingen tegen de intuïtie in
 
 Deze staan er niet voor niets zo in.
@@ -193,9 +233,9 @@ dpr-plafond van 1,5.
 
 De rekenkundige kern is puur en heeft unit tests: het objectgedrag (doel
 volgen, drift, de lijn met roerpunten), de projectie (scherm naar uv naar vlak),
-de keuze van de roerpunten op een geanimeerd oppervlak en de asymmetrie van de
-vleugelslag. Zesenveertig tests, `npm test`. Het beeld zelf wordt niet
-automatisch getest.
+de keuze van de roerpunten op een geanimeerd oppervlak, de asymmetrie van de
+vleugelslag en de stuwkracht die eruit volgt. Eenenzestig tests, `npm test`. Het
+beeld zelf wordt niet automatisch getest.
 
 ## Wat er bewust niet in zit
 

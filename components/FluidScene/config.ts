@@ -31,6 +31,16 @@ export const defaultConfig: FluidSceneConfig = {
        voor stille modellen is het het aantal punten over de lengte. */
     stirPoints: 14,
     targetThrottle: 3000,
+
+    /* Elke vleugelslag zet de draak een stukje naar voren. Doorgerekend op een
+       slag van 0,8 tot 2,2 Hz komt hij hiermee per slag 5 tot 10 procent van
+       zijn eigen lengte vooruit; op 0,05 was dat 2 tot 3 procent, en dat lag
+       tegen de rand van wat je nog ziet. Het volgen staat traag genoeg om hem
+       gewicht te geven, zodat de uitslag achterloopt op de slag in plaats van
+       er een kopie van te zijn. */
+    thrustForce: 0.15,
+    thrustResponse: 6,
+    thrustAdapt: 0.3,
   },
 
   simulation: {

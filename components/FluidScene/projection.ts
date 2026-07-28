@@ -64,6 +64,19 @@ export const screenToSimulationDirection = (direction: Vec2, ratio: number): Vec
     ? { x: direction.x, y: -direction.y / ratio }
     : { x: direction.x * ratio, y: -direction.y }
 
+/**
+ * Een richting op het scherm, in graden, naar een richting op het vlak waar het
+ * object zweeft. 0 wijst naar rechts, 90 naar boven, net als bij `windDirection`.
+ *
+ * De camera kijkt recht naar beneden met -z omhoog in beeld, dus rechts op het
+ * scherm is +x en omhoog op het scherm is -z. De uitkomst volgt de afspraak van
+ * `uvToPlane`: `y` is de z-as van de scene.
+ */
+export const planeDirection = (degrees: number): Vec2 => {
+  const radians = (degrees * Math.PI) / 180
+  return { x: Math.cos(radians), y: -Math.sin(radians) }
+}
+
 /** afstand waarop de camera moet staan om een vlak van deze hoogte te vullen */
 export const distanceForHeight = (fovDegrees: number, height: number) =>
   height / 2 / Math.tan((fovDegrees * Math.PI) / 360)
