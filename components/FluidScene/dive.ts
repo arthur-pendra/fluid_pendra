@@ -123,10 +123,17 @@ export const stepDive = (
 
   if (state.stage === 'diving') {
     /* De neus gaat eerst en het wegvallen komt daarna: hij hoort niet weg te
-       zakken terwijl hij nog vlak ligt. `pitchRate` is hoe snel hij overhelt,
-       en pas naarmate hij staat telt de versnelling echt mee. */
-    const pitch = state.pitch + (-90 - state.pitch) * (1 - Math.exp(-config.pitchRate * delta))
-    const nosed = Math.min(1, state.pitch / -90)
+       zakken terwijl hij nog vlak ligt.
+
+       Geëgaliseerd over een vaste tijd en niet exponentieel naar -90 toe. Een
+       exponentiële nadering heeft zijn hoogste snelheid meteen bij het begin, en
+       dat is precies wat een overgang "opeens" maakt: de neus klapt om in plaats
+       van over te hellen. Deze ramp begint op nul snelheid, versnelt in het
+       midden en komt weer op nul uit, dus de kanteling zet in en dooft uit. */
+    const ramp = Math.min(1, elapsed / Math.max(config.pitchTime, 1e-6))
+    const eased = ramp * ramp * (3 - 2 * ramp)
+    const pitch = -90 * eased
+    const nosed = eased
 
     /* Geen knik naar beneden maar een boog, en dat is één ingreep: de
        snelheidsvector draait mee met de neus. Bij vlak liggen gaat alles nog

@@ -143,6 +143,14 @@ const FluidRig = ({ config, modelUrl, paused, pointer }: FluidRigProps) => {
   const clickedAt = useRef<number | null>(null)
   const lastClick = useRef<number | null>(null)
   const scratch = useRef(new Vector3())
+  /* Stilstaande muis: dan zakt hij weg tot achter de fog en komt hij rustig
+     terug zodra je weer beweegt. `uv` blijft staan waar je hem liet, dus
+     "niets doen" is te zien aan een uv die niet verandert en niet aan een uv
+     die weg is. */
+  const idleSince = useRef(0)
+  const lastUv = useRef<{ x: number; y: number } | null>(null)
+  const rest = useRef(0)
+
   /* de duik: telt slagen af en neemt tijdens de manoeuvre de plek over */
   const dive = useRef(createDiveState())
   const beats = useRef(0)
@@ -217,6 +225,22 @@ const FluidRig = ({ config, modelUrl, paused, pointer }: FluidRigProps) => {
 
     const sim = config.simulation
 
+    /* beweegt de cursor nog? Zolang niet loopt de rusttijd op. */
+    const here = input.uv
+    const moved =
+      !here || !lastUv.current || here.x !== lastUv.current.x || here.y !== lastUv.current.y
+    if (moved) idleSince.current = now
+    lastUv.current = here ? { x: here.x, y: here.y } : null
+
+    const idle = now - idleSince.current > config.object.idleAfter * 1000
+    /* Geëgaliseerd naar de rustdiepte toe en terug, en met opzet niet even snel:
+       wegzakken mag loom, terugkomen hoort meteen te reageren op je hand. */
+    const wanted = idle ? config.object.idleDepth : 0
+    const rate = idle ? config.object.idleRate : config.object.idleRate * 3
+    if (!frozen) {
+      rest.current += (wanted - rest.current) * (1 - Math.exp(-rate * delta))
+    }
+
     const surface = stir.current
     const anchored = surface.mesh !== null && surface.vertices.length > 0
 
@@ -287,7 +311,7 @@ const FluidRig = ({ config, modelUrl, paused, pointer }: FluidRigProps) => {
          hem daarmee vanzelf kleiner. */
       objectRef.current.position.set(
         place.x,
-        config.object.height + (anchored ? dive.current.depth : 0),
+        config.object.height + (anchored ? dive.current.depth - rest.current : 0),
         place.y,
       )
       /* neus omlaag om de as die op het scherm horizontaal loopt */

@@ -150,11 +150,17 @@ export const defaultConfig: FluidSceneConfig = {
        diveAcceleration is een versnelling: hij begint traag en valt steeds
        harder, zoals loslaten. Op 1,8 is hij in ongeveer een seconde onder de
        rand. */
+    /* wegzakken bij een stilstaande muis. De fog is op 1,6 eenheden compleet,
+       dus op 3 is hij ruim weg en heeft hij nog wat marge. */
+    idleAfter: 3,
+    idleDepth: 3,
+    idleRate: 0.7,
+
     diveEvery: 10,
     diveSpeed: 1.1,
-    diveAcceleration: 9,
+    diveAcceleration: 3.2,
     diveDepth: 12,
-    pitchRate: 3.5,
+    pitchTime: 1.6,
     fogDepth: 1.6,
     awayTime: 5,
     enterRate: 1.1,

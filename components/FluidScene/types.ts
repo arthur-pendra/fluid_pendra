@@ -145,6 +145,21 @@ export type ThrustConfig = {
 }
 
 /**
+ * Wegzakken als je de muis met rust laat: hij zakt achter de fog en komt terug
+ * zodra je weer beweegt. Dat is iets anders dan de duik, die op slagen aftelt en
+ * een vaste manoeuvre afmaakt; dit volgt gewoon jouw aandacht.
+ */
+export type IdleConfig = {
+  /** na hoeveel seconden zonder muisbeweging hij begint weg te zakken */
+  idleAfter: number
+  /** hoe diep hij dan gaat, in wereldeenheden. Voorbij de fog-diepte is hij weg */
+  idleDepth: number
+  /** hoe snel dat wegzakken gaat, per seconde. Terugkomen gaat drie keer zo
+      snel: wegzakken mag loom zijn, terugkomen hoort op je hand te reageren */
+  idleRate: number
+}
+
+/**
  * De duik, zie dive.ts. Om de zoveel vleugelslagen laat hij zich vallen en komt
  * even later van opzij weer binnen.
  */
@@ -163,9 +178,10 @@ export type DiveConfig = {
       staat op zo'n 2,4 eenheden, dus op 12 is hij nog een vijfde van zijn
       grootte en roert hij vrijwel niets meer */
   diveDepth: number
-  /** hoe snel de neus omlaag gaat, per seconde. De kanteling loopt vóór op het
-      wegvallen, want vlak wegzakken is geen duik */
-  pitchRate: number
+  /** hoe lang de neus erover doet om van vlak naar recht omlaag te komen, in
+      seconden. Geëgaliseerd, dus de kanteling zet zacht in en dooft zacht uit;
+      hij loopt vóór op het wegvallen, want vlak wegzakken is geen duik */
+  pitchTime: number
   /** over hoeveel eenheden diepte hij in de achtergrond oplost. De fog begint
       een eindje achter het vliegvlak, dus tijdens het gewone vliegen merk je er
       niets van; pas als hij wegduikt vervaagt hij */
@@ -181,7 +197,8 @@ export type DiveConfig = {
 export type ObjectConfig = ThrustConfig &
   PoseConfig &
   FlightConfig &
-  DiveConfig & {
+  DiveConfig &
+  IdleConfig & {
   /** kleur van het ingebouwde object; een eigen model houdt zijn eigen kleur */
   color: string
   /** achtergrond van de render target, net iets donkerder dan de pagina */

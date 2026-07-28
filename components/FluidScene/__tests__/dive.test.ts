@@ -5,9 +5,9 @@ import type { DiveConfig } from '../types'
 const config: DiveConfig = {
   diveEvery: 10,
   diveSpeed: 1.1,
-  diveAcceleration: 9,
+  diveAcceleration: 3.2,
   diveDepth: 12,
-  pitchRate: 3.5,
+  pitchTime: 1.6,
   fogDepth: 1.6,
   awayTime: 5,
   enterRate: 1.1,
@@ -82,33 +82,58 @@ describe('stepDive', () => {
   it('duikt in een boog: eerst vooruit, dan de diepte in', () => {
     const diving = until(createDiveState(), 'diving', { beatsAdvanced: 1 })
 
-    let early = diving
-    for (let frame = 0; frame < 5; frame++) early = step(early)
-    let late = early
-    for (let frame = 0; frame < 45; frame++) late = step(late)
-
     /* vooruit is een dalende y, en dat gebeurt vooral zolang hij nog vlak ligt */
+    let early = diving
+    for (let frame = 0; frame < 10; frame++) early = step(early)
     expect(early.place.y).toBeLessThan(diving.place.y)
-    expect(late.depth).toBeLessThan(early.depth)
 
-    /* de boog buigt om: het laatste stuk gaat veel meer de diepte in dan vooruit */
-    const forwardLate = Math.abs(late.place.y - early.place.y)
-    const downLate = Math.abs(late.depth - early.depth)
+    const forwardEarly = Math.abs(early.place.y - diving.place.y)
+    const downEarly = Math.abs(early.depth - diving.depth)
+    expect(forwardEarly).toBeGreaterThan(downEarly)
+
+    /* doorstappen tot de neus echt over is, want de kanteling is geëgaliseerd
+       en doet er een seconde of anderhalf over */
+    let over = early
+    for (let frame = 0; frame < 400 && over.pitch > -85 && over.stage === 'diving'; frame++) {
+      over = step(over)
+    }
+    expect(over.pitch).toBeLessThanOrEqual(-85)
+
+    /* en dan is het omgeklapt: het gaat nu veel meer de diepte in dan vooruit */
+    let after = over
+    for (let frame = 0; frame < 20; frame++) after = step(after)
+    const forwardLate = Math.abs(after.place.y - over.place.y)
+    const downLate = Math.abs(after.depth - over.depth)
     expect(downLate).toBeGreaterThan(forwardLate)
 
     /* zijwaarts blijft hij waar hij was; dit is een duik en geen bocht */
-    expect(late.place.x).toBe(diving.place.x)
+    expect(after.place.x).toBe(diving.place.x)
   })
 
   it('brengt de neus omlaag voordat hij echt wegvalt', () => {
     const diving = until(createDiveState(), 'diving', { beatsAdvanced: 1 })
     let state = diving
-    for (let frame = 0; frame < 6; frame++) state = step(state)
+    for (let frame = 0; frame < 30; frame++) state = step(state)
 
     /* de kanteling loopt voor: al flink overgeheld terwijl hij nog nauwelijks weg is */
     expect(state.pitch).toBeLessThan(-10)
     expect(Math.abs(state.depth)).toBeLessThan(0.5)
     expect(state.pitch).toBeGreaterThan(-90)
+  })
+
+  it('zet de kanteling zacht in in plaats van meteen om te klappen', () => {
+    const diving = until(createDiveState(), 'diving', { beatsAdvanced: 1 })
+
+    const first = step(diving)
+    const opening = Math.abs(first.pitch - diving.pitch)
+
+    let middle = diving
+    for (let frame = 0; frame < 30; frame++) middle = step(middle)
+    const halfway = Math.abs(step(middle).pitch - middle.pitch)
+
+    /* halverwege draait hij veel harder dan in de eerste frame; bij een
+       exponentiële nadering zou het precies andersom zijn */
+    expect(halfway).toBeGreaterThan(opening * 3)
   })
 
   it('valt steeds harder in plaats van op een vast tempo', () => {
