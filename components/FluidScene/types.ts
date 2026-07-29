@@ -56,6 +56,62 @@ export type PursuitConfig = {
   orbitRate: number
 }
 
+/**
+ * Hoe de draak belicht wordt, zie shading.ts. Het recept komt van de vis van
+ * Immersive Garden: een matcap als belichtingsramp, een losse lamp in de scene,
+ * en een optelling die er een bodem onder legt.
+ */
+export type ShadingConfig = {
+  /** de grondtoon van de ramp, waar geen licht op valt. Boven nul houden: op nul
+      wordt de schaduwkant een gat in plaats van een vorm. */
+  matcapBase: number
+  /** hoe kort de overgang van donker naar licht is. Dit is wat metaal van huid
+      onderscheidt — hoog maakt hem hard en glanzend, laag zacht en mat. */
+  matcapSweep: number
+  /** de glans, waar het licht recht in de camera weerkaatst */
+  matcapGloss: number
+  /** hoe smal die glans is. Hoog is een lichtpuntje op metaal, laag is een
+      brede zachte bloem over zijn hele rug — en dat laatste is waar het
+      dromerige van de vis vandaan komt. */
+  matcapGlossWidth: number
+  /** randlicht op de uiterste rand van het silhouet */
+  matcapRim: number
+  /** de kleur van zijn schaduwkant. Hier zit de stemming in: koel en blauwig
+      leest als lucht en afstand, warm als iets dat zelf gloeit. */
+  shadowTint: string
+  /** de kleur van zijn lichte kant */
+  lightTint: string
+  /** de kleur van de lijn om zijn silhouet. Mag fel — het is een dunne rand, en
+      juist daar valt een kleur op die nergens anders voorkomt. */
+  rimTint: string
+  /** hoeveel de tint verschuift met de hoek waaronder je hem ziet. Dit is wat
+      een zeepbel en een libellenvleugel doen: dezelfde plek is een andere kleur
+      zodra hij wegdraait. Klein houden — het is een zweem, geen regenboog. */
+  iridescence: number
+  /** over hoeveel hoek die verschuiving zich uitstrekt. Laag laat hem alleen op
+      de rand gebeuren, hoog spoelt hem over het hele lijf. */
+  iridescenceSpread: number
+
+  /** hoe diep het net dáárbinnen wegzakt. Dit is wat van het randlicht een
+      lijn maakt in plaats van een gloed: je ziet hem pas los van het lijf als
+      er een donkere band tussen zit. Opgemeten uit de matcap van de vis. */
+  matcapRimGap: number
+  /** waar het licht vandaan komt, in graden om het beeldvlak */
+  lightAngle: number
+  /** 0 is precies van opzij, 1 recht van voren. Van opzij levert de meeste vorm
+      op, van voren het meeste oppervlak. */
+  lightHeight: number
+  /** sterkte van de losse lamp in de scene. Die staat naast de matcap en doet
+      iets wat die niet kan: lichter worden als hij ernaartoe vliegt. */
+  lightPunch: number
+  /** grondbelichting over alles heen */
+  ambient: number
+  /** hoeveel van de basiskleur er bovenop de vermenigvuldiging bij komt. Dit is
+      de doorschenen gloed van de vis, en bij ons wat de belichting door het
+      onthullingsmasker heen trekt. Op 0 blijft er een silhouet over. */
+  shadeFloor: number
+}
+
 export type FlightConfig = {
   /** hoe ver hij zijwaarts van het midden gaat, als deel van de halve
       beeldbreedte. Een deel en geen wereldmaat, want anders gebruikt hij op een
@@ -272,6 +328,7 @@ export type DiveConfig = {
 }
 
 export type ObjectConfig = PursuitConfig &
+  ShadingConfig &
   ThrustConfig &
   PoseConfig &
   FlightConfig &
@@ -384,6 +441,7 @@ export type SimulationConfig = {
   intensityVariation: number
   /** duur van de golf na een klik, in seconden */
   shockwaveDuration: number
+
 }
 
 export type PaintingConfig = {
@@ -400,6 +458,42 @@ export type PaintingConfig = {
   paletteFrequency: [number, number, number]
   /** duur van de intro-fade, in seconden */
   revealDuration: number
+
+  /**
+   * Hoeveel van het object er sowieso doorkomt, los van de stroming.
+   *
+   * De draak wordt onthuld door de vloeistof: waar het veld stilstaat is er
+   * alleen achtergrond, en waar het hard waait komt hij door. Op de meeste
+   * pixels zit hij daar ergens tussenin, en dat is precies de waas die je ziet —
+   * geen laag eroverheen maar de achtergrond die door hem heen schijnt.
+   *
+   * Zolang dat het effect ís, hoort daar een knop op te zitten. Op 0 is het
+   * zoals het altijd was: geen streek, geen draak. Op 1 staat hij er altijd
+   * volledig en doet de stroming alleen nog de kleur eromheen. Ertussenin heb je
+   * een draak die je kunt zien terwijl je stilstaat, maar die nog steeds oplicht
+   * waar je langs hem veegt — en dat is waarschijnlijk waar je hem wilt hebben.
+   */
+  presence: number
+
+  /**
+   * Hoeveel gaten er in die aanwezigheid zitten, 0 tot 1.
+   *
+   * Op 0 komt hij overal even sterk door en is hij matglas: gelijkmatig half
+   * doorzichtig, en dat leest als een technische instelling in plaats van als
+   * iets. Hoger breekt ruis die bodem open, zodat hij op de ene plek vol staat
+   * en op de andere vrijwel weg is.
+   *
+   * Dat is het verschil tussen mist en wolken. Mist is overal even dik; wolken
+   * hebben randen, en juist aan die randen zie je dat er iets vóór hem langs
+   * drijft in plaats van dat hij zelf vaag is.
+   */
+  presenceHoles: number
+  /** hoe groot die gaten zijn. Klein maakt er vlokken van, groot maakt het een
+      paar banken die traag over hem heen trekken. */
+  presenceScale: number
+  /** hoe hard ze langstrekken, in schermhoogtes per seconde. Trager dan de
+      slierten houden: dit is de grote beweging, die is de fijne. */
+  presenceDrift: number
 
   /**
    * Slierten lucht die met de wind langstrekken, zodat je door iets heen zweeft
@@ -443,6 +537,35 @@ export type FluidSceneConfig = {
    * aanraakscherm nooit waar je zit.
    */
   clickImpulse: boolean
+
+  /**
+   * De draak kaal in beeld, zonder vloeistof eromheen.
+   *
+   * Geen effect maar een werkstand. Normaal wordt hij alleen onthuld waar de
+   * stroming geweest is, en dat masker eet precies datgene op wat je wilt zien
+   * als je aan zijn belichting zit te draaien: zachte schaduw, de glans op zijn
+   * rug, de lijn om zijn silhouet. Hier staat hij plat op de achtergrond van zijn
+   * eigen target — geen masker, geen tint, geen slierten, geen vervorming.
+   *
+   * De oplosser slaat dan ook over. Dat scheelt negen passes, maar vooral: het
+   * maakt de proef zuiver. Zie je hier niets veranderen aan een knop, dan ligt
+   * het aan de belichting en niet aan wat eroverheen ligt.
+   */
+  bareObject: boolean
+
+  /**
+   * Of hij mag wegduiken als je hem met rust laat.
+   *
+   * Ook een werkstand. Normaal is dat juist het punt — laat je hem staan, dan
+   * duikt hij weg en komt hij pas terug als je weer beweegt. Maar zit je aan
+   * zijn belichting, dan is dat precies verkeerd: je haalt je hand van de muis
+   * om te kijken, en dan is hij weg.
+   *
+   * Uit betekent niet dat hij stilhangt. Ben je er niet, dan hangt hij om zijn
+   * eigen dwaalpunt en vliegt hij gewoon door, zie pursuit.ts. Staat hij op dat
+   * moment midden in een duik, dan maakt hij die af en komt hij terug.
+   */
+  diveEnabled: boolean
   object: ObjectConfig
   simulation: SimulationConfig
   painting: PaintingConfig

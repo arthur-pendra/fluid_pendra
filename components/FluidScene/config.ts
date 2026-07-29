@@ -16,6 +16,10 @@ export const defaultConfig: FluidSceneConfig = {
   background: '#f4f4f4',
   clickImpulse: false,
 
+  /* twee werkstanden om aan de belichting te kunnen zitten, zie types.ts */
+  bareObject: false,
+  diveEnabled: true,
+
   object: {
     color: '#6f7278',
     background: '#efefef',
@@ -35,6 +39,52 @@ export const defaultConfig: FluidSceneConfig = {
 
     stirPoints: 14,
     targetThrottle: 3000,
+
+    /* De belichting, zie shading.ts. Doorgemeten tegen de vis van Immersive
+       Garden: een matcap als grijze belichtingsramp, een lamp in de scene, en
+       een optelling die er een bodem onder legt.
+
+       matcapSweep en matcapGlossWidth samen bepalen of het hard of dromerig
+       wordt, en ze staan nu allebei laag. Hoog is metaal: de overgang van donker
+       naar licht wordt zo kort dat je hem als een rand over het lijf ziet lopen,
+       en de glans wordt een puntje. Laag is de vis: één brede zachte gradiënt
+       over zijn hele midden. Opgemeten uit hun matcap, over het rode kanaal dat
+       hun shader leest — 197 in het hart, 45 op driekwart, 119 op de rand.
+
+       matcapRimGap hoort bij matcapRim en niet los. Die 119 op de rand is de
+       lijn om de vis heen, en de 45 daarvóór is waaróm je hem als lijn ziet.
+
+       shadeFloor lager dan 0,25 en de draak zakt terug naar een silhouet zodra
+       het onthullingsmasker eroverheen gaat. */
+    matcapBase: 0.12,
+    matcapSweep: 0.8,
+    matcapGloss: 0.7,
+    matcapGlossWidth: 3,
+    matcapRim: 0.6,
+    matcapRimGap: 0.35,
+
+    /* De kleur van de ramp zelf. Hiervóór was die grijs, net als bij de vis, en
+       grijs maal een textuur is schaduw en geen materiaal — hun vis haalt zijn
+       kleur uit een koi-textuur en heeft dat dus niet nodig.
+
+       Koele schaduw, warm licht: dat is het oudste trucje dat er is en het werkt
+       omdat je ogen het als diepte lezen. De rand mag ergens anders zitten dan
+       allebei; het is een dunne lijn, en juist daar valt een kleur op die verder
+       nergens voorkomt.
+
+       De verschuiving is met opzet klein. Op 0,12 zie je hem pas als hij draait
+       — dan spoelt er een zweem over zijn vleugel — en dat is precies wat je
+       wilt. Boven 0,4 wordt het een regenboog en gaat de draak eraan. */
+    shadowTint: '#5c6f86',
+    lightTint: '#f2ece2',
+    rimTint: '#9fd4e8',
+    iridescence: 0.12,
+    iridescenceSpread: 1.6,
+    lightAngle: 135,
+    lightHeight: 0.55,
+    lightPunch: 0.55,
+    ambient: 0.8,
+    shadeFloor: 0.35,
 
     /* Zijwaarts volgt hij de cursor, naar voren en achteren zweeft hij op ruis.
        De kop staat vast naar voren; alleen het lijf kantelt.
@@ -295,6 +345,7 @@ export const defaultConfig: FluidSceneConfig = {
 
     intensityVariation: 0.06,
     shockwaveDuration: 0.7,
+
   },
 
   painting: {
@@ -308,6 +359,26 @@ export const defaultConfig: FluidSceneConfig = {
     paletteAmplitude: [0.5, 0.5, 0.5],
     paletteFrequency: [1, 1, 1],
     revealDuration: 0.5,
+
+    /* Hoeveel van de draak er sowieso doorkomt, los van de stroming. Op 0 is het
+       zoals het was: alleen zichtbaar waar je geveegd hebt. Zie types.ts. */
+    presence: 0,
+
+    /* En hoe die aanwezigheid opgebroken wordt. Zonder dit is hij overal even
+       half doorzichtig — matglas, en dat leest als een instelling. Met gaten
+       erin drijft er iets vóór hem langs. Zie types.ts.
+
+       presenceDrift staat in schermhoogtes per seconde, en anders dan bij de
+       slierten klopt dat ook: daar wordt de verschuiving ná het schalen opgeteld,
+       dus daar drijft een grovere ruis vanzelf trager. Hier niet.
+
+       Trager dan de slierten met opzet — dit zijn de banken en die zijn de
+       vlokken. Lopen ze even snel, dan zie je één beweging in plaats van twee
+       lagen. Maar niet té traag: grote banken hebben weinig rand om te volgen,
+       dus die moeten juist iets harder lopen voordat je ze ziet bewegen. */
+    presenceHoles: 0.7,
+    presenceScale: 0.55,
+    presenceDrift: 0.06,
 
     /* De luchtslierten. Ze leggen hun eigen kleur over het beeld in plaats van
        het object te onthullen, want onthullen werkt alleen waar het object

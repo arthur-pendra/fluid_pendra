@@ -7,7 +7,7 @@ import {
   AnimationMixer,
   Box3,
   Mesh,
-  MeshBasicMaterial,
+  MeshMatcapMaterial,
   Quaternion,
   Vector3,
   type AnimationClip,
@@ -18,6 +18,7 @@ import {
 import { SkeletonUtils } from 'three/examples/jsm/Addons.js'
 import { beatProfile, clipRate, foldPhase, soarPhases } from './beat'
 import { readRig } from './rig'
+import { lightPosition, matcapTexture, shadeLikeTheFish, smoothNormals } from './shading'
 import { pickStirPoints } from './stirSurface'
 import type { ObjectConfig, PointMotion, StirSurface } from './types'
 
@@ -84,7 +85,24 @@ const fitToBox = (object: Object3D, box: Box3, config: OrientConfig) => {
   object.position.copy(center).multiplyScalar(-scale).applyQuaternion(orientation)
 }
 
-const makeUnlit = (object: Object3D, color: string) => {
+/**
+ * Het model belichten volgens het recept van de vis, zie shading.ts.
+ *
+ * Hier stond een `MeshBasicMaterial`, en dat was geen keuze maar een gebrek: de
+ * glb komt zonder normalen binnen, en zonder normalen bestaat er geen
+ * belichting. Die worden nu berekend, en daarmee kan er een matcap op.
+ *
+ * `MeshMatcapMaterial` als onderlaag en niet een eigen `ShaderMaterial`. Die
+ * doet de matcap-opzoeking al met precies dezelfde formule als IG — die hebben
+ * ze daar zelf vandaan — en levert bovendien skinning, mist, het uitsnijden van
+ * de vleugelvliezen en het omklappen van de normaal op achterkanten. Alleen de
+ * laatste regel, waar de kleur uit komt, wordt vervangen.
+ */
+const dressModel = (
+  object: Object3D,
+  color: string,
+  uniforms: Record<string, { value: unknown }>,
+) => {
   object.traverse((child) => {
     if (!(child instanceof Mesh)) return
 
@@ -95,16 +113,45 @@ const makeUnlit = (object: Object3D, color: string) => {
        het object is juist op het beeld gepast. */
     child.frustumCulled = false
 
+    smoothNormals(child.geometry)
+
     const previous = Array.isArray(child.material) ? child.material[0] : child.material
-    child.material = new MeshBasicMaterial({
+    const material = new MeshMatcapMaterial({
       color: previous?.map ? '#ffffff' : color,
       map: previous?.map ?? null,
+      /* de matcap wordt er door de aanroeper op gehangen, zodat een draai aan de
+         belichting dit materiaal niet opnieuw laat bouwen */
       /* alphaTest en side overnemen, anders worden uitgesneden delen zoals
          vleugelvliezen dichte vlakken */
       alphaTest: previous?.alphaTest ?? 0,
       transparent: previous?.transparent ?? false,
       side: previous?.side,
+      fog: true,
     })
+
+    material.onBeforeCompile = (shader) => {
+      /* dezelfde uniform-objecten en geen kopieën: de aanroeper stelt ze
+         daardoor bij zonder te hoeven weten of deze shader al gebouwd is */
+      Object.assign(shader.uniforms, uniforms)
+
+      /* Alleen de fragment-shader hoeft eraan te geloven: de lamp wordt daar in
+         de ruimte van de camera getrokken, dus er is geen extra varying nodig. */
+      shader.fragmentShader = shader.fragmentShader
+        .replace(
+          '#include <common>',
+          `#include <common>
+           uniform vec3 uLightPosition;
+           uniform float uLightPunch;
+           uniform float uAmbient;
+           uniform float uShadeFloor;`,
+        )
+        .replace(
+          'vec3 outgoingLight = diffuseColor.rgb * matcapColor.rgb;',
+          shadeLikeTheFish,
+        )
+    }
+
+    child.material = material
   })
 }
 
@@ -232,17 +279,47 @@ type ModelProps = {
 }
 
 const Model = ({ url, config, frozen, beating, beats, folding, onStirSurface }: ModelProps) => {
+  const { color, length, stirPoints, flipped, spin } = config
+
   /* draco staat uit: het model is met meshopt gecomprimeerd, en die decoder zit
      in de bundel in plaats van achter een CDN */
   const { scene, animations } = useGLTF(url, false)
+
+  /* De matcap wordt gerekend en niet geladen, zie shading.ts. Dat is 128 bij 128
+     pixels, dus opnieuw maken bij welke knopdraai dan ook kost niets — maar de
+     oude moet wel weg, anders lekt er per draai een textuur op de kaart. */
+  const matcap = useMemo(() => matcapTexture(config), [config])
+  useEffect(() => () => matcap.dispose(), [matcap])
+
+  /* De uniforms van de lamp staan hier en niet in het materiaal, en ze worden
+     één keer gemaakt. Dat is met opzet: `onBeforeCompile` draait pas als het
+     materiaal voor het eerst getekend wordt, dus een effect dat daarna de
+     uniforms wil bijstellen vindt ze nog niet. Door dezelfde objecten in de
+     shader te hángen werkt bijstellen ongeacht wanneer dat gebeurt. */
+  const uniforms = useMemo(
+    () => ({
+      uLightPosition: { value: new Vector3() },
+      uLightPunch: { value: 0 },
+      uAmbient: { value: 0 },
+      uShadeFloor: { value: 0 },
+    }),
+    [],
+  )
+
+  useEffect(() => {
+    uniforms.uLightPosition.value.copy(lightPosition(config))
+    uniforms.uLightPunch.value = config.lightPunch
+    uniforms.uAmbient.value = config.ambient
+    uniforms.uShadeFloor.value = config.shadeFloor
+  }, [uniforms, config])
 
   const prepared = useMemo(() => {
     /* een skinned model mag niet met Object3D.clone: de nieuwe meshes zouden
        aan het oude skelet blijven hangen */
     const object = SkeletonUtils.clone(scene)
-    makeUnlit(object, config.color)
+    dressModel(object, color, uniforms)
 
-    const orient = { length: config.length, flipped: config.flipped, spin: config.spin }
+    const orient = { length, flipped, spin }
 
     const clip = animations[0]
     if (!clip) {
@@ -260,7 +337,7 @@ const Model = ({ url, config, frozen, beating, beats, folding, onStirSurface }: 
     const { mesh, vertices, motion, box, speeds, spans } = measureSurface(object, clip)
     fitToBox(object, box, orient)
 
-    const picked = pickStirPoints(motion, config.stirPoints)
+    const picked = pickStirPoints(motion, stirPoints)
     return {
       object,
       speeds,
@@ -270,12 +347,24 @@ const Model = ({ url, config, frozen, beating, beats, folding, onStirSurface }: 
   }, [
     scene,
     animations,
-    config.color,
-    config.length,
-    config.stirPoints,
-    config.flipped,
-    config.spin,
+    uniforms,
+    /* met opzet niet de hele config: dit bouwt het model opnieuw op en meet het
+       oppervlak door de hele clip heen, en dat is het duurste wat hier gebeurt.
+       De belichting hangt er daarom buiten en wordt los bijgesteld. */
+    color,
+    length,
+    stirPoints,
+    flipped,
+    spin,
   ])
+
+  /* De matcap erop hangen. Staat los van de opbouw hierboven zodat een draai aan
+     de belichting het model niet opnieuw laat meten. */
+  useEffect(() => {
+    prepared.object.traverse((child) => {
+      if (child instanceof Mesh) (child.material as MeshMatcapMaterial).matcap = matcap
+    })
+  }, [prepared, matcap])
 
   const { actions, names, mixer } = useAnimations(animations, prepared.object)
 

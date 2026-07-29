@@ -26,6 +26,10 @@ const DebugPanel = ({ onChange }: DebugPanelProps) => {
   const controls = useControls({
     background: defaultConfig.background,
     clickImpulse: defaultConfig.clickImpulse,
+    /* de draak kaal, zonder vloeistof eromheen — om aan zijn belichting te zitten */
+    bareObject: defaultConfig.bareObject,
+    /* uit laat hem doorvliegen als je van de muis af gaat, in plaats van wegduiken */
+    diveEnabled: defaultConfig.diveEnabled,
 
     object: folder(
       {
@@ -60,6 +64,33 @@ const DebugPanel = ({ onChange }: DebugPanelProps) => {
       { collapsed: false },
     ),
 
+    belichting: folder(
+      {
+        /* De ramp schaalt zichzelf, dus deze zes veranderen zijn vórm en niet
+           hoe licht hij is. Ruime bereiken met opzet: het gaat erom dat je kunt
+           zien wat een knop dóét, niet dat elke stand bruikbaar is. */
+        matcapBase: { value: object.matcapBase, min: 0, max: 1, step: 0.01 },
+        matcapSweep: { value: object.matcapSweep, min: 0.1, max: 8, step: 0.05 },
+        matcapGloss: { value: object.matcapGloss, min: 0, max: 4, step: 0.05 },
+        matcapGlossWidth: { value: object.matcapGlossWidth, min: 1, max: 60, step: 0.5 },
+        matcapRim: { value: object.matcapRim, min: 0, max: 4, step: 0.05 },
+        matcapRimGap: { value: object.matcapRimGap, min: 0, max: 2, step: 0.02 },
+        /* de kleur van de ramp zelf; zet ze op zwart/wit/wit voor het grijze
+           recept van de vis */
+        shadowTint: object.shadowTint,
+        lightTint: object.lightTint,
+        rimTint: object.rimTint,
+        iridescence: { value: object.iridescence, min: 0, max: 1, step: 0.01 },
+        iridescenceSpread: { value: object.iridescenceSpread, min: 0.2, max: 6, step: 0.1 },
+        lightAngle: { value: object.lightAngle, min: 0, max: 360, step: 1 },
+        lightHeight: { value: object.lightHeight, min: 0, max: 1, step: 0.01 },
+        /* en deze drie hoe licht hij wordt; die staan achter de textuur */
+        lightPunch: { value: object.lightPunch, min: 0, max: 4, step: 0.05 },
+        ambient: { value: object.ambient, min: 0, max: 3, step: 0.05 },
+        shadeFloor: { value: object.shadeFloor, min: 0, max: 2, step: 0.02 },
+      },
+      { collapsed: true },
+    ),
     volgen: folder(
       {
         reachSide: { value: object.reachSide, min: 0, max: 1, step: 0.01 },
@@ -104,11 +135,50 @@ const DebugPanel = ({ onChange }: DebugPanelProps) => {
       { collapsed: true },
     ),
 
+    waas: folder(
+      {
+        /* De mist op de scene van de draak zelf, niet op de eindpass. Die zit
+           binnen zijn render target en blijft dus ook staan met `bareObject`
+           aan — het is de enige laag die je op geen enkele manier kwijtraakt. */
+        fogDepth: { value: object.fogDepth, min: 0.2, max: 8, step: 0.05 },
+        /* En waar de vloeistof zijn rokerige karakter vandaan haalt: twee
+           ruistexturen over elkaar die de stroming sturen. De tweede is fijner
+           dan de eerste; hoe verder ze uit elkaar staan, hoe meer detail er in
+           de wervels komt. */
+        firstNoiseScale: { value: simulation.firstNoiseScale, min: 0.2, max: 6, step: 0.05 },
+        secondNoiseScale: { value: simulation.secondNoiseScale, min: 0.2, max: 12, step: 0.1 },
+        /* onder de drempel valt de stroming in gaten uiteen; dat is wat er
+           vlokken van maakt in plaats van een gladde veeg */
+        gapVelocityBoost: { value: simulation.gapVelocityBoost, min: 0, max: 10, step: 0.1 },
+      },
+      { collapsed: true },
+    ),
+
     beeld: folder(
       {
+        /* hoeveel van de draak er sowieso doorkomt, los van de stroming; op 0 is
+           het zoals het was en zie je hem alleen waar je geveegd hebt */
+        presence: { value: painting.presence, min: 0, max: 1, step: 0.01 },
+        /* en hoe die aanwezigheid opgebroken wordt; op 0 is hij matglas, hoger
+           maakt er wolken van met randen eraan */
+        presenceHoles: { value: painting.presenceHoles, min: 0, max: 1, step: 0.02 },
+        presenceScale: { value: painting.presenceScale, min: 0.1, max: 3, step: 0.05 },
+        presenceDrift: { value: painting.presenceDrift, min: 0, max: 0.4, step: 0.005 },
         warp: { value: painting.warp, min: 0, max: 0.05, step: 0.0005 },
         rippleStrength: { value: painting.rippleStrength, min: 0, max: 0.2, step: 0.001 },
-        tintAmount: { value: painting.tintAmount, min: 0, max: 0.3, step: 0.005 },
+        /* De tint die over de draak heen gaat, en de enige laag naast de
+           slierten waar je iets aan kunt doen — het masker eronder is de
+           vloeistof zelf en heeft geen knop.
+
+           De drie eronder zijn de vorm van het kleurverloop: kleur = basis +
+           amplitude * cos(2pi * (frequentie * t + fase)). Basis is het midden
+           waar hij omheen slingert, amplitude hoe ver, frequentie hoe vaak hij
+           de cirkel rondgaat over de streek. Gelijke waarden per kanaal geven
+           grijs; laat ze uiteenlopen en er komt kleur in. */
+        tintAmount: { value: painting.tintAmount, min: 0, max: 0.6, step: 0.005 },
+        paletteBase: { value: painting.paletteBase, step: 0.02 },
+        paletteAmplitude: { value: painting.paletteAmplitude, step: 0.02 },
+        paletteFrequency: { value: painting.paletteFrequency, step: 0.05 },
         wispAmount: { value: painting.wispAmount, min: 0, max: 0.6, step: 0.01 },
         wispColor: painting.wispColor,
         wispScale: { value: painting.wispScale, min: 0.2, max: 4, step: 0.1 },
@@ -126,13 +196,32 @@ const DebugPanel = ({ onChange }: DebugPanelProps) => {
       ...defaultConfig,
       background: controls.background,
       clickImpulse: controls.clickImpulse,
+      bareObject: controls.bareObject,
+      diveEnabled: controls.diveEnabled,
       object: {
         ...object,
+        fogDepth: controls.fogDepth,
         color: controls.color,
         length: controls.length,
         followSpeed: controls.followSpeed,
         driftRadius: controls.driftRadius,
         driftSpeed: controls.driftSpeed,
+        matcapBase: controls.matcapBase,
+        matcapSweep: controls.matcapSweep,
+        matcapGloss: controls.matcapGloss,
+        matcapGlossWidth: controls.matcapGlossWidth,
+        matcapRim: controls.matcapRim,
+        matcapRimGap: controls.matcapRimGap,
+        shadowTint: controls.shadowTint,
+        lightTint: controls.lightTint,
+        rimTint: controls.rimTint,
+        iridescence: controls.iridescence,
+        iridescenceSpread: controls.iridescenceSpread,
+        lightAngle: controls.lightAngle,
+        lightHeight: controls.lightHeight,
+        lightPunch: controls.lightPunch,
+        ambient: controls.ambient,
+        shadeFloor: controls.shadeFloor,
         reachSide: controls.reachSide,
         releaseRate: controls.releaseRate,
         trailRate: controls.trailRate,
@@ -172,6 +261,9 @@ const DebugPanel = ({ onChange }: DebugPanelProps) => {
       },
       simulation: {
         ...simulation,
+        firstNoiseScale: controls.firstNoiseScale,
+        secondNoiseScale: controls.secondNoiseScale,
+        gapVelocityBoost: controls.gapVelocityBoost,
         cursorForce: controls.cursorForce,
         objectForce: controls.objectForce,
         windDirection: controls.windDirection,
@@ -189,7 +281,14 @@ const DebugPanel = ({ onChange }: DebugPanelProps) => {
         ...painting,
         warp: controls.warp,
         rippleStrength: controls.rippleStrength,
+        presence: controls.presence,
+        presenceHoles: controls.presenceHoles,
+        presenceScale: controls.presenceScale,
+        presenceDrift: controls.presenceDrift,
         tintAmount: controls.tintAmount,
+        paletteBase: controls.paletteBase as [number, number, number],
+        paletteAmplitude: controls.paletteAmplitude as [number, number, number],
+        paletteFrequency: controls.paletteFrequency as [number, number, number],
         wispAmount: controls.wispAmount,
         wispColor: controls.wispColor,
         wispScale: controls.wispScale,

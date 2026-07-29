@@ -23,6 +23,7 @@ export const paintingFragmentShader = /* glsl */ `
 
   uniform sampler2D uSimulation;
   uniform sampler2D uObject;
+  uniform float uBare;
   uniform vec3 uBackground;
   uniform vec3 uPaletteA;
   uniform vec3 uPaletteB;
@@ -33,6 +34,10 @@ export const paintingFragmentShader = /* glsl */ `
   uniform float uShockwaveProgress;
   uniform float uRatio;
   uniform float uReveal;
+  uniform float uPresence;
+  uniform float uPresenceHoles;
+  uniform float uPresenceScale;
+  uniform vec2 uPresenceOffset;
   uniform float uTintAmount;
   uniform float uWarp;
   uniform float uRippleStrength;
@@ -130,7 +135,34 @@ export const paintingFragmentShader = /* glsl */ `
     wisp *= 1.0 - clamp(amount * uWispClear, 0.0, 1.0);
 
     vec3 revealed = object + tint * uTintAmount;
-    vec3 color = mix(uBackground, mix(uBackground, revealed, amount), uReveal);
+
+    /* Hoeveel van hem er doorkomt: wat de stroming onthult, plus wat er sowieso
+       staat. Zonder dat tweede deel wordt hij overal met de achtergrond gemengd
+       waar het veld zwak is, en dat is de waas die je niet weg kon krijgen —
+       want die zat niet in een laag maar in dit mengsel.
+
+       Die bodem is niet overal even dik. Ruis breekt hem open, en dat is het
+       verschil tussen mist en wolken: mist is overal hetzelfde, wolken hebben
+       randen. Aan die randen zie je dat er iets vóór hem langs drijft in plaats
+       van dat hij zelf vaag is.
+
+       Een andere plek in het ruisveld dan de slierten, en op een ander kanaal.
+       Lazen ze hetzelfde, dan zouden de gaten precies op de flarden vallen en
+       viel het samen tot één laag in plaats van twee. */
+    /* De verschuiving vóór het schalen en niet erna. Dat lijkt een detail maar
+       het bepaalt wat de knop betekent: erna gaat de echte snelheid op het
+       scherm door de schaal heen, dus grotere wolken zouden vanzelf trager
+       drijven. Zo staat presenceDrift in schermhoogtes per seconde en blijft
+       dat zo, hoe groot je de banken ook maakt. */
+    vec2 cloudUv = (screenUv + uPresenceOffset) * uPresenceScale + vec2(17.3, 4.1);
+    float bank = texture2D(uNoise, cloudUv).g;
+
+    /* rond het midden opengebroken, zodat de gaten en de dichte plekken elkaar
+       in evenwicht houden en de knop blijft betekenen wat hij zegt */
+    float holes = 1.0 + (bank - 0.5) * 2.0 * uPresenceHoles;
+
+    float show = clamp(amount + uPresence * clamp(holes, 0.0, 2.0), 0.0, 1.0);
+    vec3 color = mix(uBackground, mix(uBackground, revealed, show), uReveal);
 
     /* De sliert legt zijn eigen vleug over het beeld in plaats van het object te
        onthullen. Dat is met opzet: onthullen werkt alleen waar het object staat,
@@ -139,6 +171,11 @@ export const paintingFragmentShader = /* glsl */ `
        Zo trekt de sliert overal langs, en waar hij over de draak gaat wast hij
        hem een beetje weg, zoals damp die voor je langs drijft. */
     color = mix(color, uWispColor, wisp * uReveal);
+
+    /* De kale werkstand, zie types.ts. Met de rauwe uv en niet de gebogen: geen
+       masker, geen tint, geen slierten en geen vervorming — alleen de draak
+       zoals hij uit zijn eigen target komt. */
+    color = mix(color, texture2D(uObject, vUv).rgb, uBare);
 
     gl_FragColor = vec4(linearToSRGB(color), 1.0);
   }

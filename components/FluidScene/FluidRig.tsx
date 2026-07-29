@@ -129,6 +129,7 @@ const FluidRig = ({ config, modelUrl, paused, pointer }: FluidRigProps) => {
     () => ({
       uSimulation: { value: null },
       uObject: { value: null },
+      uBare: { value: 0 },
       uBackground: { value: new Color(config.background) },
       uPaletteA: { value: new Vector3(...config.painting.paletteBase) },
       uPaletteB: { value: new Vector3(...config.painting.paletteAmplitude) },
@@ -139,6 +140,10 @@ const FluidRig = ({ config, modelUrl, paused, pointer }: FluidRigProps) => {
       uShockwaveProgress: { value: 1 },
       uRatio: { value: 1 },
       uReveal: { value: 0 },
+      uPresence: { value: config.painting.presence },
+      uPresenceHoles: { value: config.painting.presenceHoles },
+      uPresenceScale: { value: config.painting.presenceScale },
+      uPresenceOffset: { value: new Vector2() },
       uTintAmount: { value: config.painting.tintAmount },
       uWarp: { value: config.painting.warp },
       uRippleStrength: { value: config.painting.rippleStrength },
@@ -183,6 +188,8 @@ const FluidRig = ({ config, modelUrl, paused, pointer }: FluidRigProps) => {
   const urge = useRef(0)
   /* hoe ver de luchtslierten opgeschoven zijn; loopt door zolang de scene loopt */
   const wisp = useRef(new Vector2())
+  /* de wolkenbanken die de aanwezigheid openbreken; trager dan de slierten */
+  const bank = useRef(new Vector2())
 
   /* de procedurele laag: eigen klok, de gedempte kopdraai, en één quaternion die
      hergebruikt wordt zodat er per frame niets gealloceerd wordt */
@@ -268,7 +275,11 @@ const FluidRig = ({ config, modelUrl, paused, pointer }: FluidRigProps) => {
     if (moved) idleSince.current = now
     lastUv.current = here ? { x: here.x, y: here.y } : null
 
-    const idle = now - idleSince.current > config.object.idleAfter * 1000
+    /* Staat het duiken uit, dan is er nooit een aanleiding om te gaan. Hier en
+       niet in dive.ts: daar hoort alleen het gedrag te staan, niet of je het aan
+       hebt. Hij hangt dan om zijn eigen dwaalpunt en vliegt door. */
+    const idle =
+      config.diveEnabled && now - idleSince.current > config.object.idleAfter * 1000
 
     const surface = stir.current
     const anchored = surface.mesh !== null && surface.vertices.length > 0
@@ -649,7 +660,11 @@ const FluidRig = ({ config, modelUrl, paused, pointer }: FluidRigProps) => {
       ratio,
     )
     const carry = sim.windSpeed * sim.timeStep
-    if (!frozen) simulation.step(gl, { x: air.x * carry, y: air.y * carry })
+    /* in de kale werkstand slaat de oplosser over: negen passes minder, en
+       vooral geen vloeistof die het beeld van de draak kleurt */
+    if (!frozen && !config.bareObject) {
+      simulation.step(gl, { x: air.x * carry, y: air.y * carry })
+    }
 
     /* 3. de eindpass */
     const painting = paintingRef.current
@@ -659,10 +674,14 @@ const FluidRig = ({ config, modelUrl, paused, pointer }: FluidRigProps) => {
 
       uniforms.uSimulation.value = simulation.texture
       uniforms.uObject.value = objectTarget.texture
+      uniforms.uBare.value = config.bareObject ? 1 : 0
       uniforms.uBackground.value.set(config.background)
       uniforms.uResolution.value.set(size.width * dpr, size.height * dpr)
       uniforms.uRatio.value = ratio
       uniforms.uTintAmount.value = config.painting.tintAmount
+      uniforms.uPresence.value = config.painting.presence
+      uniforms.uPresenceHoles.value = config.painting.presenceHoles
+      uniforms.uPresenceScale.value = config.painting.presenceScale
       uniforms.uWarp.value = config.painting.warp
       uniforms.uRippleStrength.value = config.painting.rippleStrength
 
@@ -674,9 +693,16 @@ const FluidRig = ({ config, modelUrl, paused, pointer }: FluidRigProps) => {
         const rate = config.painting.wispSpeed * delta
         wisp.current.x -= Math.cos(windRadians) * rate
         wisp.current.y -= Math.sin(windRadians) * rate
+
+        /* De wolkenbanken trekken dezelfde kant op maar trager: twee lagen die
+           in hetzelfde weer hangen. Lopen ze even snel, dan zie je één beweging. */
+        const bankRate = config.painting.presenceDrift * delta
+        bank.current.x -= Math.cos(windRadians) * bankRate
+        bank.current.y -= Math.sin(windRadians) * bankRate
       }
       uniforms.uNoise.value = simulation.noise
       uniforms.uWispOffset.value.copy(wisp.current)
+      uniforms.uPresenceOffset.value.copy(bank.current)
       uniforms.uWispScale.value = config.painting.wispScale
       uniforms.uWispAmount.value = config.painting.wispAmount
       uniforms.uWispGap.value = config.painting.wispGap
