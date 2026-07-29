@@ -26,6 +26,36 @@ export type PointMotion = {
  * geanimeerd model; de bol en stille modellen volgen de cursor en drijven, want
  * die hebben geen kop om vooruit te zetten.
  */
+/**
+ * Hoe de draak zich tot jouw cursor verhoudt, zie pursuit.ts. Staat los van
+ * `FlightConfig`: die gaat over vliegen, deze over volgen.
+ */
+export type PursuitConfig = {
+  /**
+   * Hoe snel de plek die hij najaagt jouw cursor bijhoudt, per seconde.
+   *
+   * Dit is achterlópen en niet dempen. `followRate` maakt zijn beweging zacht;
+   * dit maakt hem te laat. Laag laat hem bij een snelle zwenk de omkeerpunten
+   * missen en de bocht afsnijden — wat een dier doet dat achter iets aan zit.
+   */
+  trailRate: number
+  /**
+   * Hoe snel hij zijn eigen gang gaat zodra jij uit beeld bent, per seconde.
+   *
+   * Veel trager dan `trailRate`: hij verliest je langzamer dan hij je volgt.
+   * Daardoor zakt hij geleidelijk naar zijn eigen dwaalpunt in plaats van weg te
+   * springen, en komt hij bij je terugkomst even geleidelijk weer mee. Op nul
+   * blijft hij hangen waar je hem achterliet.
+   */
+  releaseRate: number
+  /** hoe ver naast je cursor hij hangt, in wereldeenheden. Op 0 mikt hij er
+      weer precies op en is het volgen zo direct als het was. */
+  orbitRadius: number
+  /** hoe vaak hij per seconde een rondje om je heen maakt. Laag houden: op 0,05
+      duurt een rondgang twintig seconden, en dat is al goed te zien. */
+  orbitRate: number
+}
+
 export type FlightConfig = {
   /** hoe ver hij zijwaarts van het midden gaat, als deel van de halve
       beeldbreedte. Een deel en geen wereldmaat, want anders gebruikt hij op een
@@ -241,7 +271,8 @@ export type DiveConfig = {
   enterGap: number
 }
 
-export type ObjectConfig = ThrustConfig &
+export type ObjectConfig = PursuitConfig &
+  ThrustConfig &
   PoseConfig &
   FlightConfig &
   DiveConfig &

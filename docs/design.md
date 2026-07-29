@@ -359,6 +359,46 @@ vermenigvuldigd, waardoor een geschaald en bewegend model wegvalt terwijl het pa
 in beeld staat. Culling levert hier ook niets op, want het object is juist op het
 beeld gepast.
 
+## Prestaties
+
+Opgemeten in de browser, op een canvas van 2213 bij 1119 met dpr 1,5:
+
+```
+104-120 fps   8,3-9,6 ms per frame   javascript in de loop 0,5-0,7 ms
+```
+
+Dat eerste getal zegt weinig, want 120 fps is precies vsync. De marge komt uit de
+belasting opvoeren tot het breekt: op 2048² blijft de frametijd 9,3 ms, op 4096²
+gaat hij naar 29,4 ms en 34 fps. Uit dat omslagpunt volgt zo'n 6 Gfragmenten per
+seconde voor deze shadermix, en daarmee kost de simulatie op 1024² ongeveer 1,6
+ms — een vijfde van een frame. **Er is ruwweg een factor vijf over.**
+
+De duurste plek is de penseelpass: die loopt per pixel over álle penselen, dus
+`stirPoints` is de zwaarste knop in de config. Sinds er een afkap in zit die
+penselen overslaat die de pixel niet kunnen raken, is het aantal penselen veel
+minder bepalend geworden — wat overblijft is de goedkope bereiktest, niet het
+dure afstandsveld. Daarom staat hij op een desktop nog gewoon op veertien; de
+referentie doet het met zeven, maar die had die afkap niet.
+
+Wat er níet in zit aan problemen: geen lek. `useFBO` ruimt zijn target op bij een
+resize, materialen en geometrie gaan mee in de cleanup, en het geheugen bleef
+over de hele meting op drie geometrieën en twaalf texturen staan.
+
+## Lichter op een zwak apparaat
+
+Zonder maatregel draait op een telefoon precies dezelfde belasting als op een
+werkstation. Immersive Garden lost dat op met tiers voor `default`, `bad`, `low`,
+`mobile` en `tablet`, en zet de vloeistof op alles behalve een gezonde desktop
+volledig uit. Dat kan daar omdat het een laag over de pagina is; bij ons ís de
+vloeistof de scene, dus uitzetten bestaat niet en schalen is het enige antwoord.
+
+`profile.ts` haalt op een aanraakscherm, een smal venster of een machine met vier
+kernen of minder de simulatie naar 512², de roerpunten naar acht en het
+dpr-plafond naar 1. Samen is dat meer dan zes keer minder werk voor de kaart. De
+herkenning is een gok en geen meting — er is geen betrouwbare manier om vooraf te
+weten hoe snel een GPU is — en ze is daarom met opzet ruim: liever een sterke
+telefoon onnodig licht dan een zwakke laptop op vol.
+
 ## Randgevallen
 
 Geen WebGL geeft een stille terugval naar de achtergrondkleur. Reduced motion
@@ -374,7 +414,8 @@ volgen, drift, de lijn met roerpunten), de projectie (scherm naar uv naar vlak),
 de keuze van de roerpunten op een geanimeerd oppervlak, de asymmetrie van de
 vleugelslag, de stuwkracht die eruit volgt, het zweven met zijn kanteling, de
 ongelijkmatige clipklok en de procedurele laag op de botten — die laatste met het
-echte skelet als fixture, want daar is misgaan stil. Honderdnegentien tests,
+echte skelet als fixture, want daar is misgaan stil, plus de keuze om lichter te
+draaien op een zwak apparaat. Tweehonderdzeventien tests,
 `npm test`. Het beeld zelf wordt niet automatisch getest.
 
 ## Wat er bewust niet in zit

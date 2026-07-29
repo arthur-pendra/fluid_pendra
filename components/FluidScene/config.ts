@@ -55,8 +55,36 @@ export const defaultConfig: FluidSceneConfig = {
        een stijf lijf.
 
        bankAngle is de bovengrens, niet wat je meestal ziet. */
-    reachSide: 0.65,
-    reachAhead: 0.6,
+    reachSide: 1.15,
+    reachAhead: 1.1,
+    /* Hoe hij zich tot je cursor verhoudt, zie pursuit.ts. Hij jaagt een oudere
+       versie van je cursor na en mikt op een plek ernaast die langzaam om je
+       heen draait — hij komt dus van links, dan van rechts, en er is nooit een
+       moment waarop hij stilstaat omdat hij "er is".
+
+       trailRate is achterlopen en niet dempen: op 1,3 loopt hij ruim een halve
+       seconde achter, genoeg om bij een snelle zwenk de bocht af te snijden.
+       orbitRate 0,11 is één rondgang per negen seconden. */
+    trailRate: 1.3,
+    releaseRate: 0.2,
+    orbitRadius: 0.55,
+    orbitRate: 0.11,
+    /* Doorgemeten met een cursor die door het beeld zwenkt, tegenover hoe het
+       was toen de cursor rechtstreeks zijn doel was:
+
+         baan 0     hangt 0,17 van je cursor   100% dichtbij   0% uit beeld
+         baan 0,55  hangt 0,53                  37% dichtbij   5% uit beeld  <- nu
+         baan 0,95  hangt 0,81                  17% dichtbij  17% uit beeld
+
+       Die middelste rij is met opzet: strakker volgen (trailRate 1,3) en een
+       wijdere baan heffen elkaar deels op, dus hij hangt even dicht bij je als
+       bij een kleinere baan maar wijkt vijf keer zo vaak echt uit. Dichtheid en
+       uitstapjes zijn dus twee knoppen en niet één.
+
+       glideBack moest mee omhoog. Naar beneden is zweven, en op 0,22 haalde hij
+       de onderrand simpelweg niet, hoe wijd de baan ook stond. Boven 0,5
+       verandert er niets meer, dus daar ligt de rem ergens anders. */
+
     followRate: 1.5,
 
     /* Vooruit en achteruit zijn met opzet niet gelijk. Vooruit kost slagen en
@@ -74,7 +102,7 @@ export const defaultConfig: FluidSceneConfig = {
        een korte hop nooit op gang en schuift hij vooruit zonder te slaan. Op 2,5
        staan ze binnen een halve seconde aan het werk. */
     beatThrust: 1.1,
-    glideBack: 0.22,
+    glideBack: 0.5,
     arriveGap: 0.04,
     beatRate: 2.5,
 

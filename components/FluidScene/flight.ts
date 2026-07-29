@@ -88,6 +88,14 @@ export type FlightState = {
    * zweefstand en blijft daar hangen, op 1 loopt hij zijn slagen af.
    */
   beating: number
+  /**
+   * Hoe hard hij op dit moment achteruit zweeft, in wereldeenheden per seconde.
+   *
+   * Staat in de toestand en niet in de berekening omdat de snelheid zelf moet
+   * kunnen aanzetten en afremmen. Rekende hij hem elk frame vers uit, dan is er
+   * geen aanzet en geen uitloop.
+   */
+  sink: number
   /** verstreken tijd, voedt de ruis */
   elapsed: number
 }
@@ -136,9 +144,22 @@ export const createFlightState = (config: FlightConfig): FlightState => ({
   bank: 0,
   roll: 0,
   lean: 0,
+  sink: 0,
   beating: 0,
   elapsed: 0,
 })
+
+/**
+ * Hoe de zweefsnelheid achteruit meeschaalt met wat er nog te gaan is, per
+ * seconde, en hoe snel die snelheid zelf verandert.
+ *
+ * De eerste zorgt voor de uitloop: binnen ongeveer `glideBack / SINK_SLOPE` van
+ * zijn doel begint hij af te remmen. De tweede zorgt voor de aanzet: een halve
+ * seconde om op snelheid te komen. Constanten en geen knoppen, want het gaat om
+ * de vórm van de beweging; hoe hard hij mag is `glideBack`.
+ */
+const SINK_SLOPE = 1.4
+const SINK_RATE = 2.2
 
 /** een hoek in graden terug naar het bereik -180 tot 180 */
 export const wrapAngle = (degrees: number): number => {
@@ -192,9 +213,24 @@ export const stepFlight = (
   /* een dode zone rond het doel, anders klappert hij tussen slaan en zweven */
   const needsForward = gap < -config.arriveGap
 
+  /* Achteruit zweven met een aanzet en een uitloop.
+
+     Dit was een vaste snelheid, en dat voelde alsof hij naar achteren getrokken
+     werd: opgemeten precies 0,500 eenheden per seconde, drieënhalve seconde
+     lang, en dan pardoes stil. Een lineaire verplaatsing die begint en eindigt
+     op een muur leest niet als een dier dat zich laat zakken.
+
+     Nu twee dingen tegelijk. De snelheid die hij wíl hangt aan wat er nog te
+     gaan is, met `glideBack` als plafond, dus hij remt af naarmate hij aankomt.
+     En hij komt daar met vertraging op, dus hij zet ook aan in plaats van
+     meteen op zijn eindsnelheid te staan. Samen is dat een S en geen blok. */
+  const room = Math.max(0, gap)
+  const wantedSink = Math.min(config.glideBack, room * SINK_SLOPE)
+  const sink = state.sink + (wantedSink - state.sink) * (1 - Math.exp(-SINK_RATE * delta))
+
   const travel = needsForward
     ? Math.max(-boost * config.beatThrust * delta, gap)
-    : Math.min(config.glideBack * delta, Math.max(0, gap))
+    : Math.min(sink * delta, room)
 
   /* zolang hij vooruit moet blijven de vleugels werken, daarna zakt het weg en
      kruipt de clip naar zijn zweefstand */
@@ -235,5 +271,5 @@ export const stepFlight = (
   const wish = Math.max(-1, Math.min(1, toward)) * -config.leanAngle
   const lean = state.lean + (wish - state.lean) * (1 - Math.exp(-config.bankRate * delta))
 
-  return { position, bank, roll, lean, beating, elapsed }
+  return { position, bank, roll, lean, beating, sink, elapsed }
 }

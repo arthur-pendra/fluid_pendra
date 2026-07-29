@@ -63,6 +63,10 @@ const DebugPanel = ({ onChange }: DebugPanelProps) => {
     volgen: folder(
       {
         reachSide: { value: object.reachSide, min: 0, max: 1, step: 0.01 },
+        releaseRate: { value: object.releaseRate, min: 0, max: 2, step: 0.02 },
+        trailRate: { value: object.trailRate, min: 0.2, max: 12, step: 0.1 },
+        orbitRadius: { value: object.orbitRadius, min: 0, max: 1.2, step: 0.01 },
+        orbitRate: { value: object.orbitRate, min: 0, max: 0.4, step: 0.005 },
         followRate: { value: object.followRate, min: 0.1, max: 8, step: 0.05 },
         driftAhead: { value: object.driftAhead, min: 0, max: 0.5, step: 0.01 },
         driftRate: { value: object.driftRate, min: 0.01, max: 0.3, step: 0.005 },
@@ -130,6 +134,10 @@ const DebugPanel = ({ onChange }: DebugPanelProps) => {
         driftRadius: controls.driftRadius,
         driftSpeed: controls.driftSpeed,
         reachSide: controls.reachSide,
+        releaseRate: controls.releaseRate,
+        trailRate: controls.trailRate,
+        orbitRadius: controls.orbitRadius,
+        orbitRate: controls.orbitRate,
         followRate: controls.followRate,
         driftAhead: controls.driftAhead,
         driftRate: controls.driftRate,

@@ -7,7 +7,7 @@ const config: FlightConfig = {
   reachAhead: 0.6,
   followRate: 1.5,
   beatThrust: 1.1,
-  glideBack: 0.22,
+  glideBack: 0.5,
   arriveGap: 0.04,
   beatRate: 2.5,
   driftAhead: 0.05,
@@ -60,6 +60,111 @@ const spread = (values: number[]) => Math.max(...values) - Math.min(...values)
 /* op het scherm is omhoog vooruit, en `y` is de z-as die daar andersom loopt */
 const VOOR: Vec2 = { x: 0, y: -0.5 }
 const ACHTER: Vec2 = { x: 0, y: 0.5 }
+
+describe('op zichzelf mikken', () => {
+  /**
+   * Waar de duik de plek stuurt hoort het vliegen niets te willen. Dat doet het
+   * door hem op zijn eigen plek te laten mikken, en dit legt vast dat dat ook
+   * echt neutraal is: geen gat, dus niets om in te halen en niets om op te
+   * kantelen.
+   *
+   * Het alternatief was `null`, en dat is níet neutraal — dat is "mik op het
+   * midden". Zie de tweede test hieronder voor wat dat kostte.
+   */
+  const zelf = (seconds: number, from: Vec2) => {
+    let state = { ...createFlightState(config), position: { ...from } }
+    const track: FlightState[] = []
+    for (let frame = 0; frame < seconds * 60; frame++) {
+      state = stepFlight(state, config, 1, { ...state.position }, reachOf(config), STEP)
+      track.push(state)
+    }
+    return track
+  }
+
+  it('laat hem staan waar hij is, ook ver van het midden', () => {
+    const track = zelf(3, { x: 1.0, y: 0.4 })
+    for (const step of track) expect(Math.abs(step.position.x - 1.0)).toBeLessThan(0.01)
+  })
+
+  it('kantelt en helt dan ook niet', () => {
+    const track = zelf(3, { x: 1.0, y: 0.4 })
+    for (const step of track) {
+      expect(Math.abs(step.bank)).toBeLessThan(config.bankAngle * 0.02)
+      expect(Math.abs(step.lean)).toBeLessThan(config.leanAngle * 0.02)
+    }
+  })
+
+  it('trekt hem naar de rand van zijn bereik als hij daarbuiten hangt', () => {
+    /* Op zichzelf mikken is neutraal binnen zijn bereik, maar niet erbuiten: daar
+       kapt `wanted` het doel af op de rand. Bij het invliegen hángt hij daarbuiten,
+       dus dit is de stand waarin hij binnenkomt.
+
+       Dat het niet helemaal neutraal is, is hier juist goed. Hij komt van opzij
+       naar binnen, en dit laat hem die kant op kantelen in plaats van vlak naar
+       binnen te schuiven. Zonder dit leest het invliegen als een plaatje dat
+       verschoven wordt. */
+    const track = zelf(5, { x: 2.2, y: 0 })
+    const edge = reachOf(config).x
+
+    expect(track[track.length - 1].position.x).toBeGreaterThan(edge - 0.01)
+    expect(track[track.length - 1].position.x).toBeLessThan(edge + 0.01)
+
+    /* Hij komt van rechts en gaat dus naar links, en linksom is op het scherm de
+       positieve kant op — dezelfde afspraak als in `stepFlight`. */
+    const diepste = Math.max(...track.map((s) => s.bank))
+    expect(diepste).toBeGreaterThan(4)
+    expect(diepste).toBeLessThan(config.bankAngle)
+  })
+
+  it('geeft een vloeiender overgave dan omschakelen vanaf het midden', () => {
+    /* Dit is de sprong die je zag bij het invliegen. De duik geeft de besturing
+       geleidelijk terug; schakelt het doel op dat moment van het midden naar jouw
+       cursor, dan staat er ineens een heel scherm achterstand en haalt hij die in
+       met een zwieper. Schuift het doel van hemzelf naar jou, dan niet.
+
+       Gemeten aan de grootste verandering in zijwaartse snelheid tussen twee
+       frames — dat is wat een zwieper ís. */
+    const cursor: Vec2 = { x: -1.8, y: 0 }
+    const start: Vec2 = { x: 2.2, y: 0 }
+
+    /* de overgave zoals `diveControl` hem doet: geëgaliseerd van 1 naar 0 */
+    const control = (t: number) => {
+      const ramp = Math.min(1, Math.max(0, t / 1.2))
+      const eased = ramp * ramp * (3 - 2 * ramp)
+      return 1 - eased
+    }
+
+    const run = (aimAt: (owned: number, here: Vec2) => Vec2 | null) => {
+      let state = { ...createFlightState(config), position: { ...start } }
+      let last = start.x
+      let worst = 0
+      let previous = 0
+
+      for (let frame = 0; frame < 2.5 * 60; frame++) {
+        const owned = control(frame * STEP)
+        state = stepFlight(state, config, 1, aimAt(owned, state.position), reachOf(config), STEP)
+
+        const speed = (state.position.x - last) / STEP
+        if (frame > 0) worst = Math.max(worst, Math.abs(speed - previous) / STEP)
+        previous = speed
+        last = state.position.x
+      }
+
+      return worst
+    }
+
+    /* zoals het was: null tot de duik begint los te laten, dan pardoes de cursor */
+    const omschakelen = run((owned) => (owned < 1 ? cursor : null))
+
+    /* zoals het nu is: het mikpunt schuift van hemzelf naar de cursor */
+    const schuiven = run((owned, here) => ({
+      x: here.x + (cursor.x - here.x) * (1 - owned),
+      y: here.y + (cursor.y - here.y) * (1 - owned),
+    }))
+
+    expect(schuiven).toBeLessThan(omschakelen * 0.5)
+  })
+})
 
 describe('noise', () => {
   it('blijft tussen nul en een', () => {
@@ -377,6 +482,74 @@ describe('naar de kant van de cursor hangen', () => {
   it('hangt niet als de knop op nul staat', () => {
     for (const state of fly(30, VER_RECHTS, { ...config, leanAngle: 0 }).track) {
       expect(state.lean).toBeCloseTo(0, 9)
+    }
+  })
+})
+
+describe('achteruit zweven heeft een aanzet en een uitloop', () => {
+  /**
+   * Dit was een vaste snelheid, en zo voelde het ook: opgemeten precies 0,500
+   * eenheden per seconde, drieënhalve seconde lang, en dan pardoes stil. Een
+   * verplaatsing die begint en eindigt op een muur leest als iets dat naar
+   * achteren getrokken wordt, niet als een dier dat zich laat zakken.
+   */
+  const zakken = () => {
+    /* eerst vooruit, dan het doel ver achter hem */
+    let state = createFlightState(config)
+    for (let frame = 0; frame < 60 * 12; frame++) {
+      state = stepFlight(state, config, 1, { x: 0, y: -0.8 }, reachOf(config), STEP)
+    }
+
+    const snelheden: number[] = []
+    for (let frame = 0; frame < 60 * 9; frame++) {
+      const voor = state.position.y
+      state = stepFlight(state, config, 1, { x: 0, y: 0.9 }, reachOf(config), STEP)
+      snelheden.push((state.position.y - voor) / STEP)
+    }
+    return { state, snelheden }
+  }
+
+  it('zet aan in plaats van meteen op snelheid te staan', () => {
+    const { snelheden } = zakken()
+    const top = Math.max(...snelheden)
+
+    expect(snelheden[0]).toBeLessThan(top * 0.15)
+    expect(snelheden[Math.round(0.5 * 60)]).toBeGreaterThan(top * 0.5)
+  })
+
+  it('remt af bij aankomst in plaats van stil te vallen', () => {
+    const { snelheden } = zakken()
+    const top = Math.max(...snelheden)
+    const opTop = snelheden.indexOf(top)
+
+    /* na de kruissnelheid hoort er een aflopende staart te zitten, geen klif */
+    const staart = snelheden.slice(opTop).filter((v) => v > top * 0.1 && v < top * 0.9)
+    expect(staart.length).toBeGreaterThan(20)
+  })
+
+  it('komt niet boven het plafond uit', () => {
+    /* de marge is het zweefwiebeltje: `driftAhead` ligt los over de plek heen,
+       dus de gemeten snelheid bevat dat ook en de zweefsnelheid zelf niet */
+    const wiebel = config.driftAhead * config.driftRate * 7
+    for (const snelheid of zakken().snelheden) {
+      expect(snelheid).toBeLessThanOrEqual(config.glideBack + wiebel)
+    }
+  })
+
+  it('komt er wel aan', () => {
+    /* Afgemeten tegen zijn bereik en niet tegen de cursor: het doel wordt daarop
+       afgekapt, dus hij hoort dáár uit te komen en niet op de 0,9 die erin ging. */
+    const doel = Math.min(0.9, reachOf(config).y)
+    const { state } = zakken()
+
+    expect(state.position.y).toBeGreaterThan(doel - config.driftAhead - 0.02)
+  })
+
+  it('gaat nooit de verkeerde kant op', () => {
+    /* achteruit is zweven; een negatieve snelheid zou betekenen dat hij ineens
+       vooruit gaat zonder ervoor te slaan */
+    for (const snelheid of zakken().snelheden) {
+      expect(snelheid).toBeGreaterThanOrEqual(-1e-6)
     }
   })
 })

@@ -27,6 +27,7 @@ import {
   uvToPlane,
 } from './projection'
 import { BASE_HEADING, createFlightState, stepFlight } from './flight'
+import { createPursuitState, stepPursuit } from './pursuit'
 import { createDiveState, diveControl, diveFoldsWings, diveNeedsBeat, stepDive } from './dive'
 import { strokeForce, windVector } from './strokeForce'
 import { approach, gazeYaw, lookHold, lookYaw, neckWeights, soarAngle, tailAngle } from './pose'
@@ -44,6 +45,25 @@ const VISIBLE_HEIGHT = 2
 
 /** een enkele stap van de cursor mag de vloeistof niet wegblazen */
 const MAX_STEP = 0.05
+
+/**
+ * Boven deze stap is het geen beweging meer maar een verplaatsing.
+ *
+ * Het penseel is geen punt maar een capsule tussen zijn vorige en zijn huidige
+ * plek, en die wordt over de hele afstand getekend. `MAX_STEP` begrenst wel de
+ * krácht maar niet die vorm, dus een object dat verspringt trekt alsnog een
+ * streep over het volle scherm — maal veertien roerpunten.
+ *
+ * Dat gebeurde echt. Als de draak na een duik van opzij terugkomt verzet hij
+ * zich in één frame 2,3 tot 3,2 eenheden; opgemeten met een wachter op de
+ * frame-loop. Zijn beeld is dan door de mist verborgen, maar zijn spoor niet,
+ * en die veeg over het hele beeld is de glitch die je ziet.
+ *
+ * Ruim boven wat een hand haalt: een kwart van de buffer in één frame is geen
+ * muisbeweging. Slaat hij er toch een keer op aan bij een zeer snelle veeg, dan
+ * mist die ene frame een streep en verder niets.
+ */
+const JUMP_STEP = 0.3
 
 /** hoe ver achter het vliegvlak de fog pas begint, in wereldeenheden */
 const FOG_LEAD = 0.25
@@ -140,6 +160,7 @@ const FluidRig = ({ config, modelUrl, paused, pointer }: FluidRigProps) => {
   /* toestand die per frame verandert en geen render hoeft te veroorzaken */
   const motion = useRef(createMotionState())
   const flight = useRef(createFlightState(config.object))
+  const pursuit = useRef(createPursuitState())
   const thrust = useRef(createThrustState())
   const reveal = useRef(0)
   const travelled = useRef<number[]>([])
@@ -256,25 +277,44 @@ const FluidRig = ({ config, modelUrl, paused, pointer }: FluidRigProps) => {
        cursor en driften. Dat onderscheid zit hier en nergens anders. */
     if (!frozen) {
       if (anchored) {
-        /* zijwaarts volgt hij de cursor; staat die niet in beeld, dan is het
-           midden het doel. Naar voren en achteren doet de cursor (nog) niets. */
+        /* Waar hij op mikt is niet jouw cursor maar een plek eromheen, zie
+           pursuit.ts: een oudere versie van je cursor met een baan eromheen. Zo
+           volgt hij wel, maar nooit door er precies op te gaan zitten. */
         const cursor = input.uv ? uvToPlane(input.uv, halfWidth, halfHeight) : null
+        const chase = stepPursuit(pursuit.current, cursor, config.object, delta)
+        pursuit.current = chase.state
+
         const bounds = { x: halfWidth, y: halfHeight }
         const reach = {
           x: config.object.reachSide * halfWidth,
           y: config.object.reachAhead * halfHeight,
         }
 
-        /* Zolang de duik het helemaal voor het zeggen heeft blijft de cursor
-           buiten de deur, anders komt hij het beeld nooit uit. Zodra dat begint
-           te zakken stuurt het vliegen er alvast op, ruim voordat het de plek
-           overneemt: dan is er bij de overgave geen achterstand meer om ineens
-           in te halen. */
+        /* Zolang de duik het voor het zeggen heeft mikt hij op zichzelf, en
+           naarmate ze de besturing teruggeeft schuift dat mikpunt naar jou toe.
+
+           Dit was een keuze tussen jouw mikpunt en `null`, en `null` betekent in
+           `stepFlight` "mik op het midden". Dat is wat er nog overbleef van de
+           sprong bij het invliegen: de plék werd al gemengd, maar zijn doel klapte
+           in één frame van het midden naar jouw cursor. Dan is zijn achterstand
+           ineens een heel scherm breed, en die haalt hij in met een zwieper. Precies
+           het "hij vliegt in en zoekt dan opeens de muis".
+
+           Op zichzelf mikken is niet hetzelfde als op het midden mikken: het gat is
+           dan nul, dus er is niets om in te halen en niets om op te kantelen. De
+           manoeuvre doet ondertussen het werk, en wat er langzaam bij komt is jij. */
+        const owned = diveControl(dive.current, config.object, bounds)
+        const here = flight.current.position
+        const aim = {
+          x: here.x + (chase.aim.x - here.x) * (1 - owned),
+          y: here.y + (chase.aim.y - here.y) * (1 - owned),
+        }
+
         flight.current = stepFlight(
           flight.current,
           config.object,
           thrust.current.boost,
-          diveControl(dive.current, config.object, bounds) < 1 ? cursor : null,
+          aim,
           reach,
           delta,
         )
@@ -508,6 +548,17 @@ const FluidRig = ({ config, modelUrl, paused, pointer }: FluidRigProps) => {
 
       brush.force.subVectors(brush.center, brush.lastCenter)
       const step = brush.force.length()
+
+      /* Verspringen is geen beweging: niets om mee te roeren, en vooral geen
+         capsule om over die afstand te trekken. Het vorige punt schuift mee naar
+         het nieuwe, zodat de volgende frame gewoon weer verder meet. */
+      if (step > JUMP_STEP) {
+        brush.lastCenter.copy(brush.center)
+        brush.force.set(0, 0)
+        brush.circular = 0
+        return 0
+      }
+
       if (step > MAX_STEP) brush.force.multiplyScalar(MAX_STEP / step)
 
       /* opmeten vóór het vormen: dit is de rauwe slag, en daar hangt de
