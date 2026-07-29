@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { createDiveState, diveFoldsWings, diveHoldsControl, stepDive } from '../dive'
+import { createDiveState, diveControl, diveFoldsWings, diveNeedsBeat, stepDive } from '../dive'
 import type { DiveConfig } from '../types'
 
 const config: DiveConfig = {
@@ -20,6 +20,9 @@ const flying = { x: 0.3, y: -0.2 }
 /** een stap van 1/60, met vaste willekeur zodat de uitkomst te controleren is */
 const step = (state: ReturnType<typeof createDiveState>, over: Partial<Parameters<typeof stepDive>[2]> = {}) =>
   stepDive(state, config, {
+    /* standaard ben je er gewoon; de tests die over wegblijven gaan zetten dit
+       zelf om */
+    idle: false,
     beatsAdvanced: 0,
     flying,
     bounds,
@@ -68,6 +71,7 @@ describe('stepDive', () => {
     const off = { ...config, diveEvery: 0 }
     for (let beat = 0; beat < 200; beat++) {
       state = stepDive(state, off, {
+        idle: false,
         beatsAdvanced: 1,
         flying,
         bounds,
@@ -157,6 +161,111 @@ describe('stepDive', () => {
     expect(away.depth).toBeLessThan(-config.diveDepth)
   })
 
+  it('duikt zodra je hem met rust laat, ook zonder de teller', () => {
+    const off = { ...config, diveEvery: 0 }
+    const state = stepDive(createDiveState(), off, {
+      idle: true,
+      beatsAdvanced: 1,
+      flying,
+      bounds,
+      delta: 1 / 60,
+      random: () => 0.25,
+    })
+
+    expect(state.stage).toBe('diving')
+  })
+
+  it('wacht op een slag, ook als je hem allang met rust laat', () => {
+    let state = createDiveState()
+    for (let frame = 0; frame < 60 * 10; frame++) state = step(state, { idle: true })
+
+    /* tien seconden stilte en nog steeds vliegend: een duik zonder een slag
+       eronder valt om in plaats van te steken */
+    expect(state.stage).toBe('flying')
+
+    expect(step(state, { idle: true, beatsAdvanced: 1 }).stage).toBe('diving')
+  })
+
+  it('vraagt om die slag zolang hij wil gaan en niet langer', () => {
+    const flyingState = createDiveState()
+
+    expect(diveNeedsBeat(flyingState, false)).toBe(false)
+    expect(diveNeedsBeat(flyingState, true)).toBe(true)
+
+    /* eenmaal onderweg doet het slaan er niet meer toe: de vleugels gaan dicht */
+    const diving = step(flyingState, { idle: true, beatsAdvanced: 1 })
+    expect(diveNeedsBeat(diving, true)).toBe(false)
+  })
+
+  it('gaat niet meer duiken als je weer beweegt voordat de slag rond is', () => {
+    let state = createDiveState()
+    for (let frame = 0; frame < 60; frame++) state = step(state, { idle: true })
+
+    /* de slag komt binnen, maar jij bent er inmiddels weer */
+    expect(step(state, { idle: false, beatsAdvanced: 1 }).stage).toBe('flying')
+  })
+
+  it('blijft weg zolang je niets doet', () => {
+    const away = until(
+      until(createDiveState(), 'diving', { idle: true, beatsAdvanced: 1 }),
+      'away',
+      { idle: true },
+    )
+
+    let state = away
+    for (let frame = 0; frame < 60 * 30; frame++) state = step(state, { idle: true })
+
+    /* ruim zes keer de vaste tijd verder en nog steeds weg: dit wacht op jou en
+       niet op de klok */
+    expect(state.stage).toBe('away')
+  })
+
+  it('komt alsnog terug als je bewoog terwijl hij nog weg moest blijven', () => {
+    let state = until(
+      until(createDiveState(), 'diving', { idle: true, beatsAdvanced: 1 }),
+      'away',
+      { idle: true },
+    )
+
+    /* één beweging, ruim binnen de tijd dat hij nog niet mág komen */
+    state = step(state, { idle: false })
+    expect(state.stage).toBe('away')
+
+    /* en daarna doe je niets meer. Hij hoort dat ene teken te onthouden in
+       plaats van te wachten op een beweging die je al gedaan hebt */
+    for (let frame = 0; frame < 60 * 10; frame++) {
+      state = step(state, { idle: true })
+      if (state.stage !== 'away') break
+    }
+
+    expect(state.stage).toBe('entering')
+  })
+
+  it('komt niet terug als je je helemaal niet laat zien', () => {
+    let state = until(
+      until(createDiveState(), 'diving', { idle: true, beatsAdvanced: 1 }),
+      'away',
+      { idle: true },
+    )
+    for (let frame = 0; frame < 60 * 30; frame++) state = step(state, { idle: true })
+
+    expect(state.stage).toBe('away')
+  })
+
+  it('komt terug zodra je weer beweegt', () => {
+    let state = until(
+      until(createDiveState(), 'diving', { idle: true, beatsAdvanced: 1 }),
+      'away',
+      { idle: true },
+    )
+    for (let frame = 0; frame < 60 * 20; frame++) state = step(state, { idle: true })
+
+    /* nog één stap, nu met een cursor die weer meedoet */
+    const woken = step(state, { idle: false })
+
+    expect(woken.stage).toBe('entering')
+  })
+
   it('blijft de ingestelde tijd weg', () => {
     const away = until(until(createDiveState(), 'diving', { beatsAdvanced: 1 }), 'away')
 
@@ -220,15 +329,66 @@ describe('stepDive', () => {
 })
 
 describe('wie de besturing heeft', () => {
-  it('laat de cursor met rust tijdens de hele manoeuvre', () => {
+  it('laat de cursor met rust tot hij weer in beeld komt', () => {
     const diving = until(createDiveState(), 'diving', { beatsAdvanced: 1 })
     const away = until(diving, 'away')
     const entering = until(away, 'entering')
 
-    expect(diveHoldsControl(createDiveState())).toBe(false)
-    expect(diveHoldsControl(diving)).toBe(true)
-    expect(diveHoldsControl(away)).toBe(true)
-    expect(diveHoldsControl(entering)).toBe(true)
+    expect(diveControl(createDiveState(), config, bounds)).toBe(0)
+    expect(diveControl(diving, config, bounds)).toBe(1)
+    expect(diveControl(away, config, bounds)).toBe(1)
+    /* net buiten beeld begonnen, dus nog helemaal van de manoeuvre */
+    expect(diveControl(entering, config, bounds)).toBe(1)
+  })
+
+  it('geeft de besturing geleidelijk terug over het invliegen', () => {
+    const entering = until(
+      until(until(createDiveState(), 'diving', { beatsAdvanced: 1 }), 'away'),
+      'entering',
+    )
+
+    let state = entering
+    let control = diveControl(state, config, bounds)
+    let loosened = 0
+
+    while (state.stage === 'entering') {
+      const next = step(state)
+      const after = diveControl(next, config, bounds)
+
+      /* nooit terug: de cursor krijgt zeggenschap en raakt die niet meer kwijt */
+      expect(after).toBeLessThanOrEqual(control + 1e-9)
+      /* en nooit in één sprong; dit is een verloop en geen schakelaar */
+      expect(control - after).toBeLessThan(0.05)
+
+      if (after < 0.99 && loosened === 0) loosened = Math.abs(next.place.x)
+      state = next
+      control = after
+    }
+
+    /* het loslaten begint zodra hij in beeld is, niet pas bij het midden */
+    expect(loosened).toBeGreaterThan(bounds.x * 0.5)
+    expect(control).toBe(0)
+  })
+
+  it('staat op nul op het moment dat de stand omslaat', () => {
+    const entering = until(
+      until(until(createDiveState(), 'diving', { beatsAdvanced: 1 }), 'away'),
+      'entering',
+    )
+
+    /* de laatste frame vóór de omslag opzoeken */
+    let state = entering
+    let last = entering
+    while (state.stage === 'entering') {
+      last = state
+      state = step(state)
+    }
+
+    /* bleef hier een restje staan, dan viel dat er bij de omslag alsnog in één
+       frame af, en dat is precies de sprong die we kwijt wilden. Nul op een
+       frame na, want de omslag valt tussen twee stappen in */
+    expect(diveControl(last, config, bounds)).toBeLessThan(0.001)
+    expect(diveControl(state, config, bounds)).toBe(0)
   })
 
   it('klapt de vleugels alleen in tijdens het vallen en niet bij het invliegen', () => {

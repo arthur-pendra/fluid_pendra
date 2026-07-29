@@ -73,6 +73,37 @@ export type FlightConfig = {
   /** hoe snel het lijf die kanteling maakt, per seconde. Laag geeft gewicht;
       hoog en het klapt van stand naar stand in plaats van te kantelen. */
   bankRate: number
+  /**
+   * Hoeveel hij om zijn eigen lengteas rolt bij een zijwaartse haal, in graden
+   * op zijn snelst.
+   *
+   * Dit is iets anders dan `bankAngle`, en de twee horen bij elkaar. Die draait
+   * zijn neus de bocht in, gezien van bovenaf; deze legt hem in die bocht. De
+   * camera kijkt recht naar beneden, dus je ziet het als een spanwijdte die
+   * korter wordt en één vleugel die naar je toe komt. Zonder deze schuift een
+   * draak met vaste vleugels over het beeld; met alleen deze hangt hij scheef
+   * zonder ergens heen te gaan.
+   */
+  rollAngle: number
+  /**
+   * Hoe snel hij die rol maakt, per seconde.
+   *
+   * Sneller dan `bankRate`, want in de lucht gaat het rollen voor: je legt hem
+   * eerst en de bocht volgt. Hier komen ze uit dezelfde gemeten snelheid, dus
+   * echt vooruitlopen kan niet, maar een korter tijdconstante geeft wel diezelfde
+   * volgorde te zien.
+   */
+  rollRate: number
+  /**
+   * Hoeveel hij naar de kant van de cursor hangt als hij er niet naartoe beweegt,
+   * in graden.
+   *
+   * Klein houden. De rest van de draai komt van wat hij doet; dit is alleen het
+   * verschil tussen een lijf dat toevallig de goede kant op staat en een lijf dat
+   * weet waar je bent. Te veel en hij wordt een naald die naar je cursor wijst,
+   * en dan is de kop die meedraait ook niets meer waard.
+   */
+  leanAngle: number
 }
 
 /**
@@ -93,6 +124,26 @@ export type PoseConfig = {
   /** hoe snel de kop die draai maakt, per seconde. Laag is loom en kijkt na,
       hoog plakt de kop aan de cursor en dan oogt het als een machine. */
   neckRate: number
+  /**
+   * Tot hoe ver om hem heen de cursor de kop nog stuurt, in radialen vanaf
+   * recht vooruit.
+   *
+   * Hierbuiten kijkt hij zijn eigen kant op. Dat is niet alleen mooier maar ook
+   * nodig: de hoek naar een doel recht achter hem klapt van +180° naar -180°, en
+   * een kop die dat volgt zwiept in één keer de hele ronde om. Onder deze grens
+   * blijven betekent nooit in de buurt van die omslag komen.
+   */
+  lookGive: number
+  /**
+   * Hoe ver hij uit zichzelf rondkijkt, in radialen.
+   *
+   * Wat er overblijft als jij niet in beeld bent of achter hem staat. Kleiner
+   * dan `neckFollow`: rondkijken is iets anders dan iets aankijken.
+   */
+  gazeSweep: number
+  /** hoe traag dat rondkijken gaat. Ruis en geen sinus, zodat er geen ronde in
+      zit die je na een minuut terugziet. */
+  gazeRate: number
   /**
    * Hoe ver de vleugels bewegen terwijl hij zweeft, in radialen aan de schouder.
    *
@@ -145,18 +196,14 @@ export type ThrustConfig = {
 }
 
 /**
- * Wegzakken als je de muis met rust laat: hij zakt achter de fog en komt terug
- * zodra je weer beweegt. Dat is iets anders dan de duik, die op slagen aftelt en
- * een vaste manoeuvre afmaakt; dit volgt gewoon jouw aandacht.
+ * Wanneer je hem kwijt bent. Eén drempel, en die stuurt de duik: laat je de muis
+ * met rust of haal je hem uit beeld, dan gaat hij weg, en hij komt terug zodra
+ * je weer beweegt. Zie dive.ts voor wat er dan gebeurt.
  */
 export type IdleConfig = {
-  /** na hoeveel seconden zonder muisbeweging hij begint weg te zakken */
+  /** na hoeveel seconden zonder muisbeweging hij je opgeeft en duikt. Een cursor
+      die het beeld uit is telt meteen als stilstaan */
   idleAfter: number
-  /** hoe diep hij dan gaat, in wereldeenheden. Voorbij de fog-diepte is hij weg */
-  idleDepth: number
-  /** hoe snel dat wegzakken gaat, per seconde. Terugkomen gaat drie keer zo
-      snel: wegzakken mag loom zijn, terugkomen hoort op je hand te reageren */
-  idleRate: number
 }
 
 /**

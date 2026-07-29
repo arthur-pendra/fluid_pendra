@@ -27,9 +27,9 @@ import {
   uvToPlane,
 } from './projection'
 import { BASE_HEADING, createFlightState, stepFlight } from './flight'
-import { createDiveState, diveFoldsWings, diveHoldsControl, stepDive } from './dive'
+import { createDiveState, diveControl, diveFoldsWings, diveNeedsBeat, stepDive } from './dive'
 import { strokeForce, windVector } from './strokeForce'
-import { approach, lookYaw, neckWeights, soarAngle, tailAngle } from './pose'
+import { approach, gazeYaw, lookHold, lookYaw, neckWeights, soarAngle, tailAngle } from './pose'
 import { createThrustState, stepThrust } from './thrust'
 import { localAxis, type BoneChain } from './rig'
 import { fullscreenVertexShader } from './shaders/fullscreen'
@@ -47,6 +47,9 @@ const MAX_STEP = 0.05
 
 /** hoe ver achter het vliegvlak de fog pas begint, in wereldeenheden */
 const FOG_LEAD = 0.25
+
+/** een frame die langer duurde dan dit was geen frame maar een weggeweest tab */
+const AWAY_GAP = 0.5
 
 type FluidRigProps = {
   config: FluidSceneConfig
@@ -143,19 +146,20 @@ const FluidRig = ({ config, modelUrl, paused, pointer }: FluidRigProps) => {
   const clickedAt = useRef<number | null>(null)
   const lastClick = useRef<number | null>(null)
   const scratch = useRef(new Vector3())
-  /* Stilstaande muis: dan zakt hij weg tot achter de fog en komt hij rustig
-     terug zodra je weer beweegt. `uv` blijft staan waar je hem liet, dus
-     "niets doen" is te zien aan een uv die niet verandert en niet aan een uv
-     die weg is. */
+  /* Wanneer je voor het laatst iets deed. Staat de cursor lang genoeg stil of is
+     hij het beeld uit, dan duikt hij weg en blijft hij weg tot je weer beweegt.
+     `uv` blijft staan waar je hem liet, dus stilstaan is te zien aan een uv die
+     niet verandert; weg is een uv die er niet is. */
   const idleSince = useRef(0)
   const lastUv = useRef<{ x: number; y: number } | null>(null)
-  const rest = useRef(0)
 
-  /* de duik: telt slagen af en neemt tijdens de manoeuvre de plek over */
+  /* de duik: wacht op je aandacht en neemt tijdens de manoeuvre de plek over */
   const dive = useRef(createDiveState())
   const beats = useRef(0)
   const seenBeats = useRef(0)
   const folding = useRef(false)
+  /* hoe hard hij de vleugels wil laten werken om aan de duik te kunnen beginnen */
+  const urge = useRef(0)
   /* hoe ver de luchtslierten opgeschoven zijn; loopt door zolang de scene loopt */
   const wisp = useRef(new Vector2())
 
@@ -225,21 +229,25 @@ const FluidRig = ({ config, modelUrl, paused, pointer }: FluidRigProps) => {
 
     const sim = config.simulation
 
-    /* beweegt de cursor nog? Zolang niet loopt de rusttijd op. */
+    /* De rusttijd begint bij de eerste frame en niet bij nul, anders staat hij
+       bij het laden meteen over tijd en duikt hij voordat je iets gedaan hebt.
+
+       En een gat in de frames betekent dat de tab weg was; dan liep de scene ook
+       niet, dus die stilte telt niet als jouw stilte. Zonder dit kom je terug op
+       een draak die precies bij je eerste blik wegduikt. */
+    if (idleSince.current === 0 || rawDelta > AWAY_GAP) idleSince.current = now
+
+    /* Beweegt de cursor nog, en is hij er überhaupt? Een cursor die het beeld
+       uit is telt als stilstaan en niet als beweging: weg is weg, en dat is
+       juist de aanleiding om te duiken. */
     const here = input.uv
     const moved =
-      !here || !lastUv.current || here.x !== lastUv.current.x || here.y !== lastUv.current.y
+      here !== null &&
+      (!lastUv.current || here.x !== lastUv.current.x || here.y !== lastUv.current.y)
     if (moved) idleSince.current = now
     lastUv.current = here ? { x: here.x, y: here.y } : null
 
     const idle = now - idleSince.current > config.object.idleAfter * 1000
-    /* Geëgaliseerd naar de rustdiepte toe en terug, en met opzet niet even snel:
-       wegzakken mag loom, terugkomen hoort meteen te reageren op je hand. */
-    const wanted = idle ? config.object.idleDepth : 0
-    const rate = idle ? config.object.idleRate : config.object.idleRate * 3
-    if (!frozen) {
-      rest.current += (wanted - rest.current) * (1 - Math.exp(-rate * delta))
-    }
 
     const surface = stir.current
     const anchored = surface.mesh !== null && surface.vertices.length > 0
@@ -251,22 +259,22 @@ const FluidRig = ({ config, modelUrl, paused, pointer }: FluidRigProps) => {
         /* zijwaarts volgt hij de cursor; staat die niet in beeld, dan is het
            midden het doel. Naar voren en achteren doet de cursor (nog) niets. */
         const cursor = input.uv ? uvToPlane(input.uv, halfWidth, halfHeight) : null
+        const bounds = { x: halfWidth, y: halfHeight }
         const reach = {
           x: config.object.reachSide * halfWidth,
           y: config.object.reachAhead * halfHeight,
         }
 
-        /* Tijdens de manoeuvre houdt de duik de cursor buiten de deur, anders
-           komt hij het beeld nooit uit. Het vliegen loopt wel gewoon door, met
-           het midden als doel, zodat hij bij terugkomst niet ergens vandaan
-           hoeft te springen. */
-        const holding = diveHoldsControl(dive.current)
-
+        /* Zolang de duik het helemaal voor het zeggen heeft blijft de cursor
+           buiten de deur, anders komt hij het beeld nooit uit. Zodra dat begint
+           te zakken stuurt het vliegen er alvast op, ruim voordat het de plek
+           overneemt: dan is er bij de overgave geen achterstand meer om ineens
+           in te halen. */
         flight.current = stepFlight(
           flight.current,
           config.object,
           thrust.current.boost,
-          holding ? null : cursor,
+          diveControl(dive.current, config.object, bounds) < 1 ? cursor : null,
           reach,
           delta,
         )
@@ -274,20 +282,48 @@ const FluidRig = ({ config, modelUrl, paused, pointer }: FluidRigProps) => {
         const advanced = beats.current - seenBeats.current
         seenBeats.current = beats.current
 
+        const away = dive.current.stage !== 'flying'
+
         dive.current = stepDive(dive.current, config.object, {
+          idle,
           beatsAdvanced: advanced,
           flying: flight.current.position,
-          bounds: { x: halfWidth, y: halfHeight },
+          bounds,
           delta,
           random: Math.random,
         })
 
+        /* Terug van de manoeuvre: de rusttijd begint opnieuw. Zonder dit telt de
+           stilte tijdens het invliegen alvast mee, en dan landt hij met een klok
+           die al over tijd is en duikt hij meteen weer weg. */
+        if (away && dive.current.stage === 'flying') idleSince.current = now
+
         folding.current = diveFoldsWings(dive.current)
 
-        /* na de manoeuvre neemt het vliegen het weer over vanaf waar de duik
-           hem heeft afgeleverd, anders klapt hij terug naar zijn oude plek */
-        if (diveHoldsControl(dive.current)) {
-          flight.current = { ...flight.current, position: { ...dive.current.place } }
+        /* Wil hij duiken, dan moet er eerst een slag onder. Zweeft hij op dat
+           moment, dan staat de clip stil en komt die slaggrens nooit, dus zet hij
+           de vleugels hier zelf aan het werk. Geëgaliseerd op hetzelfde tempo als
+           het gewone slaan: uit stilstand in één frame op vol tempo is het
+           klappen dat de rest van dit bestand juist vermijdt. */
+        const urging = diveNeedsBeat(dive.current, idle) ? 1 : 0
+        urge.current += (urging - urge.current) * (1 - Math.exp(-config.object.beatRate * delta))
+
+        /* De plek is een menging van wat de manoeuvre wil en wat het vliegen
+           wil. Op 1 hangt hij helemaal aan de duik, op 0 helemaal aan de cursor,
+           en over het invliegen heen buigt het ene in het andere over. Zonder
+           die menging hield het vliegen alleen het eindpunt over en begon het
+           daar vanaf stil. */
+        const held = diveControl(dive.current, config.object, bounds)
+        if (held > 0) {
+          const place = dive.current.place
+          const spot = flight.current.position
+          flight.current = {
+            ...flight.current,
+            position: {
+              x: spot.x + (place.x - spot.x) * held,
+              y: spot.y + (place.y - spot.y) * held,
+            },
+          }
         }
       } else {
         motion.current = stepMotion(motion.current, config.object, delta)
@@ -299,11 +335,22 @@ const FluidRig = ({ config, modelUrl, paused, pointer }: FluidRigProps) => {
        vleugelasymmetrie, de stuwkracht en de nek — die lezen alle drie deze ene
        richting. Voor de bol blijft `windDirection` gelden; die heeft geen lijf
        om te kantelen. */
-    const windDegrees = anchored
-      ? BASE_HEADING + flight.current.bank + 180
-      : sim.windDirection
+    /* Waar zijn lijf heen wijst, gezien van bovenaf: de bocht die hij rijdt plus
+       het beetje dat hij naar jou toe hangt. Eén getal, want alles wat aan zijn
+       richting hangt hoort hetzelfde te lezen — de as van de wind, de nek die
+       zich daartegen afzet, en de draai die je ziet. */
+    const facing = anchored ? flight.current.bank + flight.current.lean : 0
+
+    const windDegrees = anchored ? BASE_HEADING + facing + 180 : sim.windDirection
     const heading = planeDirection(windDegrees)
     const place = anchored ? flight.current.position : motion.current.visible
+
+    /* Hoe hard de vleugels werken, en dat is twee dingen bij elkaar: vooruit
+       willen komen, en de slag die hij nodig heeft om aan de duik te beginnen.
+       Eén getal, want de klok van de clip en de zweefcorrectie moeten hetzelfde
+       lezen: gaat de een aan terwijl de ander denkt dat hij zweeft, dan werkt de
+       correctie tegen de clip in. */
+    const working = anchored ? Math.max(flight.current.beating, urge.current) : 1
 
     if (objectRef.current) {
       /* `depth` gaat langs de kijkas: de camera staat recht boven het object, dus
@@ -311,17 +358,21 @@ const FluidRig = ({ config, modelUrl, paused, pointer }: FluidRigProps) => {
          hem daarmee vanzelf kleiner. */
       objectRef.current.position.set(
         place.x,
-        config.object.height + (anchored ? dive.current.depth - rest.current : 0),
+        config.object.height + (anchored ? dive.current.depth : 0),
         place.y,
       )
       /* neus omlaag om de as die op het scherm horizontaal loopt */
       objectRef.current.rotation.x = anchored ? (dive.current.pitch * Math.PI) / 180 : 0
       /* door `spin` staat het model al met zijn kop omhoog op het scherm, en dat
          is de vaste koers, dus wat de kanteling erbij doet is meteen de draai */
-      objectRef.current.rotation.y = anchored ? (flight.current.bank * Math.PI) / 180 : 0
+      objectRef.current.rotation.y = (facing * Math.PI) / 180
+      /* En de rol om zijn eigen lengteas. Zijn kop wijst op het scherm omhoog,
+         en dat is de negatieve z, dus dit is precies de as van neus naar staart:
+         draaien hierom legt hem in de bocht in plaats van hem te verplaatsen. */
+      objectRef.current.rotation.z = anchored ? (flight.current.roll * Math.PI) / 180 : 0
     }
 
-    beating.current = anchored ? flight.current.beating : 1
+    beating.current = working
 
     /* De procedurele laag bovenop de clip.
        De mixer draait op de standaardprioriteit en heeft deze frame de hele
@@ -359,7 +410,7 @@ const FluidRig = ({ config, modelUrl, paused, pointer }: FluidRigProps) => {
          Geschaald op hoe weinig hij slaat: tijdens het slaan doet de clip het
          werk en zou dit er alleen tegenin gaan. Per kant een eigen trekking uit
          de ruis, want symmetrie is precies wat het levenloos maakt. */
-      const soaring = 1 - flight.current.beating
+      const soaring = 1 - working
       if (soaring > 0.01 && object.soarLift > 0) {
         rig.wings.forEach((wing, side) => {
           const last = Math.max(1, wing.bones.length - 1)
@@ -386,13 +437,23 @@ const FluidRig = ({ config, modelUrl, paused, pointer }: FluidRigProps) => {
            de staart, de kop staat er tegenover. Het doel is de cursor gezien
            vanaf waar de draak op dit moment hangt, niet vanaf de oorsprong. */
         const cursor = input.uv ? uvToPlane(input.uv, halfWidth, halfHeight) : null
-        const target = cursor
-          ? lookYaw(
-              { x: -heading.x, y: -heading.y },
-              { x: cursor.x - place.x, y: cursor.y - place.y },
-              object.neckFollow,
-            )
-          : 0
+        const facingAway = { x: -heading.x, y: -heading.y }
+
+        /* Waar hij uit zichzelf naar kijkt. Dit is de grond waar alles op
+           terugvalt: geen cursor in beeld, of eentje die achter hem staat, en
+           dan is dit wat er overblijft in plaats van een kop die star vooruit
+           staat. */
+        const wandering = gazeYaw(elapsed.current, object)
+
+        /* En daaroverheen jij, maar alleen zolang je vóór hem staat. Wegen en
+           niet omschakelen: zo loopt het aankijken in het rondkijken over zonder
+           dat er een frame is waarin hij van gedachten verandert. */
+        const toward = cursor ? { x: cursor.x - place.x, y: cursor.y - place.y } : null
+        const hold = toward ? lookHold(facingAway, toward, object.lookGive) : 0
+        const target =
+          hold > 0
+            ? wandering * (1 - hold) + lookYaw(facingAway, toward!, object.neckFollow) * hold
+            : wandering
 
         neckYaw.current = approach(neckYaw.current, target, object.neckRate, delta)
 

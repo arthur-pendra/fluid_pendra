@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { approach, lookYaw, neckWeights, soarAngle, tailAngle } from '../pose'
+import { approach, bearing, gazeYaw, lookHold, lookYaw, neckWeights, soarAngle, tailAngle } from '../pose'
 import type { PoseConfig } from '../types'
 
 const config: PoseConfig = {
@@ -8,6 +8,9 @@ const config: PoseConfig = {
   tailWave: 3.2,
   neckFollow: 0.45,
   neckRate: 1.4,
+  lookGive: 2,
+  gazeSweep: 0.16,
+  gazeRate: 0.13,
   soarLift: 0.09,
   soarRate: 0.35,
 }
@@ -192,6 +195,119 @@ describe('soarAngle', () => {
     const uit = { ...config, soarLift: 0 }
     for (let frame = 0; frame < 600; frame++) {
       expect(soarAngle(0.5, frame / 60, 0, uit)).toBeCloseTo(0, 12)
+    }
+  })
+})
+
+describe('de cursor loslaten als hij achter hem komt', () => {
+  /* hij kijkt op het scherm omhoog; `rondom` legt een doel op hoek `t` om hem
+     heen, met 0 recht vooruit en pi recht achter hem */
+  const KIJKT = SCREEN_UP
+  const rondom = (angle: number) => ({ x: Math.sin(angle), y: -Math.cos(angle) })
+
+  it('houdt de kop volledig bij een doel recht vooruit', () => {
+    expect(lookHold(KIJKT, rondom(0), config.lookGive)).toBe(1)
+  })
+
+  it('laat helemaal los bij een doel recht achter hem', () => {
+    expect(lookHold(KIJKT, rondom(Math.PI), config.lookGive)).toBe(0)
+    expect(lookHold(KIJKT, rondom(-Math.PI * 0.95), config.lookGive)).toBe(0)
+  })
+
+  it('laat geleidelijk los en nooit terug', () => {
+    let previous = 1
+    for (let step = 0; step <= 400; step++) {
+      const hold = lookHold(KIJKT, rondom((step / 400) * Math.PI), config.lookGive)
+      expect(hold).toBeLessThanOrEqual(previous + 1e-9)
+      expect(previous - hold).toBeLessThan(0.05)
+      previous = hold
+    }
+    expect(previous).toBe(0)
+  })
+
+  it('springt niet als de cursor helemaal om hem heen gaat', () => {
+    /* Dit is de fout die hierachter zit. De hoek naar een doel recht achter hem
+       klapt van +180° naar -180°, en zonder gewicht volgde de kop dat: die
+       zwiepte in één frame van de ene uiterste stand naar de andere. Hier gaat
+       de cursor de hele ronde om en mag er nergens een sprong in zitten. */
+    const eigen = gazeYaw(12.5, config)
+    let previous: number | null = null
+    let biggest = 0
+    let crossed = false
+
+    /* van recht vooruit de hele ronde om, zodat hij halverwege dwars door de
+       omslag achter hem heen gaat en niet er netjes langs */
+    for (let step = 0; step <= 7200; step++) {
+      const angle = (step / 7200) * Math.PI * 2
+      const target = rondom(angle)
+      const hold = lookHold(KIJKT, target, config.lookGive)
+      const value = eigen * (1 - hold) + lookYaw(KIJKT, target, config.neckFollow) * hold
+
+      if (previous !== null) biggest = Math.max(biggest, Math.abs(value - previous))
+      if (Math.abs(angle - Math.PI) < 1e-3) crossed = true
+      previous = value
+    }
+
+    /* zonder het gewicht was dit tweemaal neckFollow, dus 0,9 */
+    expect(crossed).toBe(true)
+    expect(biggest).toBeLessThan(0.01)
+  })
+
+  it('valt terug op zijn eigen blik en niet op recht vooruit', () => {
+    const eigen = gazeYaw(12.5, config)
+    const achter = rondom(Math.PI * 0.9)
+    const hold = lookHold(KIJKT, achter, config.lookGive)
+
+    expect(hold).toBe(0)
+    expect(eigen * (1 - hold)).toBe(eigen)
+  })
+
+  it('doet niets bij een grens van nul', () => {
+    expect(lookHold(KIJKT, rondom(0), 0)).toBe(0)
+  })
+})
+
+describe('zijn eigen blik', () => {
+  it('blijft binnen de ingestelde uitslag', () => {
+    for (let step = 0; step < 4000; step++) {
+      expect(Math.abs(gazeYaw(step * 0.05, config))).toBeLessThanOrEqual(config.gazeSweep + 1e-9)
+    }
+  })
+
+  it('kijkt beide kanten op', () => {
+    const values = Array.from({ length: 4000 }, (_, step) => gazeYaw(step * 0.05, config))
+    expect(Math.min(...values)).toBeLessThan(-config.gazeSweep * 0.5)
+    expect(Math.max(...values)).toBeGreaterThan(config.gazeSweep * 0.5)
+  })
+
+  it('loopt vloeiend', () => {
+    let biggest = 0
+    for (let step = 0; step < 4000; step++) {
+      biggest = Math.max(
+        biggest,
+        Math.abs(gazeYaw(step / 60, config) - gazeYaw((step + 1) / 60, config)),
+      )
+    }
+    expect(biggest).toBeLessThan(0.005)
+  })
+
+  it('staat stil als de uitslag op nul staat', () => {
+    expect(gazeYaw(7.3, { ...config, gazeSweep: 0 })).toBe(0)
+  })
+})
+
+describe('bearing', () => {
+  it('geeft de ongeknipte hoek, ook voorbij de kopdraai', () => {
+    expect(bearing(SCREEN_UP, SCREEN_UP)).toBeCloseTo(0, 9)
+    expect(Math.abs(bearing(SCREEN_UP, { x: 0, y: 1 }))).toBeCloseTo(Math.PI, 9)
+    expect(Math.abs(bearing(SCREEN_UP, SCREEN_RIGHT))).toBeCloseTo(Math.PI / 2, 9)
+  })
+
+  it('wijst naar dezelfde kant als de geknipte draai', () => {
+    for (const kant of [SCREEN_LEFT, SCREEN_RIGHT]) {
+      expect(Math.sign(bearing(SCREEN_UP, kant))).toBe(
+        Math.sign(lookYaw(SCREEN_UP, kant, config.neckFollow)),
+      )
     }
   })
 })

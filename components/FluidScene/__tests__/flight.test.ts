@@ -14,6 +14,9 @@ const config: FlightConfig = {
   driftRate: 0.09,
   bankAngle: 25,
   bankRate: 2.4,
+  rollAngle: 20,
+  rollRate: 3.6,
+  leanAngle: 6,
 }
 
 const STEP = 1 / 60
@@ -277,6 +280,49 @@ describe('het lijf kantelen', () => {
     }
   })
 
+  it('legt zich in dezelfde bocht als waar zijn neus heen draait', () => {
+    /* twee gevolgen van één oorzaak, dus hetzelfde teken; gingen ze uit elkaar
+       lopen dan zou hij schudden in plaats van draaien */
+    const { track } = fly(60, heenEnWeer)
+
+    let agree = 0
+    let counted = 0
+    for (const state of track) {
+      if (Math.abs(state.bank) < 2 || Math.abs(state.roll) < 2) continue
+      counted++
+      if (Math.sign(state.roll) === Math.sign(state.bank)) agree++
+    }
+
+    expect(counted).toBeGreaterThan(500)
+    expect(agree / counted).toBeGreaterThan(0.98)
+  })
+
+  it('rolt merkbaar, maar niet verder dan ingesteld', () => {
+    const rolls = fly(60, heenEnWeer).track.map((s) => Math.abs(s.roll))
+
+    expect(Math.max(...rolls)).toBeGreaterThan(8)
+    expect(Math.max(...rolls)).toBeLessThanOrEqual(config.rollAngle + 1e-6)
+  })
+
+  it('gaat met rollen eerder om dan met draaien', () => {
+    /* in de lucht leg je hem eerst en de bocht volgt; hier zit dat in het tempo,
+       dus vroeg in een haal staat de rol verder op weg dan de kanteling */
+    const { track } = fly(60, heenEnWeer)
+
+    /* net na een omslag van richting, ruim vóór beide hun stand bereikt hebben */
+    const state = track[Math.round(4 * 60) + 12]
+    const rolled = Math.abs(state.roll) / config.rollAngle
+    const banked = Math.abs(state.bank) / config.bankAngle
+
+    expect(rolled).toBeGreaterThan(banked)
+  })
+
+  it('rolt niet als de knop op nul staat', () => {
+    for (const state of fly(30, heenEnWeer, { ...config, rollAngle: 0 }).track) {
+      expect(state.roll).toBeCloseTo(0, 9)
+    }
+  })
+
   it('kantelt minder naarmate hij de cursor sneller volgt', () => {
     /* Loopt tegen de intuïtie in en is toch het gewenste gedrag: sneller volgen
        geeft een hógere snelheidspiek maar een veel kortere, en het lijf heeft met
@@ -287,5 +333,50 @@ describe('het lijf kantelen', () => {
     expect(piek(fly(60, heenEnWeer, { ...config, followRate: 4 }).track)).toBeLessThan(
       piek(fly(60, heenEnWeer, { ...config, followRate: 0.8 }).track),
     )
+  })
+})
+
+describe('naar de kant van de cursor hangen', () => {
+  /* buiten zijn bereik, zodat hij er niet naartoe kán en alleen dit overblijft */
+  const VER_RECHTS: Vec2 = { x: 3, y: 0 }
+  const VER_LINKS: Vec2 = { x: -3, y: 0 }
+
+  it('blijft hangen als hij allang stilhangt', () => {
+    const { state } = fly(30, VER_RECHTS)
+
+    /* uitgevolgd en tot stilstand gekomen: de kanteling is weg, dit niet */
+    expect(Math.abs(state.bank)).toBeLessThan(1)
+    expect(Math.abs(state.lean)).toBeGreaterThan(config.leanAngle * 0.9)
+  })
+
+  it('hangt naar de kant waar de cursor staat', () => {
+    /* rechts hoort naar rechts, en rechtsom is op het scherm de negatieve kant
+       op, net als bij de kanteling */
+    expect(Math.sign(fly(30, VER_RECHTS).state.lean)).toBe(-1)
+    expect(Math.sign(fly(30, VER_LINKS).state.lean)).toBe(1)
+  })
+
+  it('blijft subtiel', () => {
+    for (const state of fly(30, VER_RECHTS).track) {
+      expect(Math.abs(state.lean)).toBeLessThanOrEqual(config.leanAngle + 1e-6)
+    }
+  })
+
+  it('richt zich op als de cursor uit beeld is', () => {
+    const rechts = fly(20, VER_RECHTS).state
+    expect(Math.abs(rechts.lean)).toBeGreaterThan(1)
+
+    /* en dan gaat de cursor weg: er is niets meer om naartoe te hangen */
+    let state = rechts
+    for (let frame = 0; frame < 20 * 60; frame++) {
+      state = stepFlight(state, config, 1, null, reachOf(config), STEP)
+    }
+    expect(state.lean).toBeCloseTo(0, 2)
+  })
+
+  it('hangt niet als de knop op nul staat', () => {
+    for (const state of fly(30, VER_RECHTS, { ...config, leanAngle: 0 }).track) {
+      expect(state.lean).toBeCloseTo(0, 9)
+    }
   })
 })

@@ -40,6 +40,18 @@ import type { FlightConfig, Vec2 } from './types'
  * ook naar rechts. Zonder die kanteling wijst het lijf de ene kant op terwijl de
  * beweging de andere kant op gaat, en dan leest het als een sprite.
  *
+ * Die haal levert drie standen op en niet één, allemaal uit hetzelfde getal:
+ *
+ *   bank  de neus draait de bocht in, gezien van bovenaf
+ *   roll  het lijf legt zich in die bocht, om zijn eigen lengteas
+ *   lean  en los daarvan hangt hij een graad of wat naar de kant waar jij staat
+ *
+ * De eerste twee horen bij elkaar omdat een vogel niet stuurt zoals een auto:
+ * hij legt zich scheef en de bocht volgt daaruit. De derde staat er los van en
+ * is met opzet klein. Hij komt niet uit wat hij doet maar uit waar jij bent, en
+ * hij blijft dus staan als hij eenmaal bij je is. Anders staat een draak die je
+ * ingehaald heeft weer kaarsrecht en is het contact precies dán weg.
+ *
  * De ruis is waarde-ruis en geen som van sinussen. Een lissajous heeft een
  * periode, en over een minuut kijken zie je die terugkomen — precies het patroon
  * dat we met een procedurele laag juist proberen weg te halen.
@@ -51,6 +63,24 @@ export type FlightState = {
   position: Vec2
   /** hoeveel het lijf meekantelt met het zweven, in graden om de vaste koers */
   bank: number
+  /**
+   * Hoeveel hij om zijn eigen lengteas ligt, in graden.
+   *
+   * Uit dezelfde zijwaartse snelheid als `bank`, en dat is het punt: één oorzaak,
+   * twee gevolgen. De neus draait de bocht in en het lijf legt zich erin, zoals
+   * dat hoort. Deze staat los zodat het tempo mag verschillen, want rollen gaat
+   * in de lucht voor op draaien.
+   */
+  roll: number
+  /**
+   * Hoeveel hij naar de kant van de cursor hangt, in graden.
+   *
+   * Dit komt niet uit zijn snelheid maar uit waar jij bent, en daarom staat het
+   * apart van `bank`: het blijft staan als hij stilhangt. Zonder dit staat een
+   * draak die zijn plek bereikt heeft weer kaarsrecht, hoe ver jij ook opzij
+   * bent, en dan is het contact weg zodra hij je ingehaald heeft.
+   */
+  lean: number
   /**
    * Of de vleugels werken, 0 tot 1, gedempt.
    *
@@ -104,6 +134,8 @@ const hover = (elapsed: number, config: FlightConfig): number =>
 export const createFlightState = (config: FlightConfig): FlightState => ({
   position: { x: 0, y: hover(0, config) },
   bank: 0,
+  roll: 0,
+  lean: 0,
   beating: 0,
   elapsed: 0,
 })
@@ -179,11 +211,29 @@ export const stepFlight = (
      negatieve kant op. */
   const decisive = config.followRate * reach.x
   const sideways = decisive > 1e-9 ? (position.x - state.position.x) / delta / decisive : 0
-  const target = Math.max(-1, Math.min(1, sideways)) * -config.bankAngle
+  const swing = Math.max(-1, Math.min(1, sideways))
+  const target = swing * -config.bankAngle
 
   /* er met vertraging naartoe: een lijf dat meteen op zijn eindstand staat
      kantelt niet, dat klapt */
   const bank = state.bank + (target - state.bank) * (1 - Math.exp(-config.bankRate * delta))
 
-  return { position, bank, beating, elapsed }
+  /* Dezelfde haal legt hem ook in de bocht, om zijn eigen lengteas. Eén oorzaak
+     en twee gevolgen, met hetzelfde teken: gaat hij naar rechts, dan wijst zijn
+     neus naar rechts én zakt zijn rechtervleugel. Uit elkaar getrokken zou het
+     twee losse bewegingen worden en dan leest het als een model dat schudt. */
+  const roll =
+    state.roll + (swing * -config.rollAngle - state.roll) * (1 - Math.exp(-config.rollRate * delta))
+
+  /* En dan nog het kleine beetje dat niets met snelheid te maken heeft: waar jij
+     staat. Naar de rauwe cursor en niet naar het afgekapte doel, want juist als
+     je buiten zijn bereik gaat staan wil je zien dat hij je nog volgt — daar kán
+     hij niet meer naartoe, dus is dit alles wat er overblijft.
+
+     Op hetzelfde tempo als de kanteling, zodat de twee als één beweging lezen. */
+  const toward = cursor && reach.x > 1e-9 ? (cursor.x - position.x) / reach.x : 0
+  const wish = Math.max(-1, Math.min(1, toward)) * -config.leanAngle
+  const lean = state.lean + (wish - state.lean) * (1 - Math.exp(-config.bankRate * delta))
+
+  return { position, bank, roll, lean, beating, elapsed }
 }

@@ -40,18 +40,19 @@ export const defaultConfig: FluidSceneConfig = {
        De kop staat vast naar voren; alleen het lijf kantelt.
 
        followRate is een afruil en geen instelling die je maximaal wil hebben.
-       Doorgemeten op een rustige haal heen en weer over de volle breedte:
+       Doorgemeten op een rustige veeg heen en weer over de volle breedte, met
+       de kanteling zoals die nu staat:
 
-         0,9   kantelt tot 21°, maar loopt 1,10 achter van zijn bereik 1,16
-         1,5   tot 16°, achterstand 0,78   <- nu
-         2,5   tot 11°, achterstand 0,51
-         4,0   tot  7°, achterstand 0,33
+         0,9   kantelt tot 34°, maar loopt 1,03 achter van zijn bereik 1,16
+         1,5   tot 24°, achterstand 0,72   <- nu
+         2,5   tot 16°, achterstand 0,46
+         4,0   tot 10°, achterstand 0,30
 
        Dat sneller volgen mínder kanteling geeft is niet fout maar het gevolg
        van twee tijdschalen: de snelheidspiek wordt hoger maar veel korter, en
-       het lijf heeft met bankRate 2,4 ruim vier tienden nodig om zijn stand te
-       bereiken. Plak je de draak aan je cursor, dan krijg je vanzelf een stijf
-       lijf.
+       het lijf heeft ook met bankRate 3,2 nog ruim drie tienden nodig om zijn
+       stand te bereiken. Plak je de draak aan je cursor, dan krijg je vanzelf
+       een stijf lijf.
 
        bankAngle is de bovengrens, niet wat je meestal ziet. */
     reachSide: 0.65,
@@ -79,8 +80,35 @@ export const defaultConfig: FluidSceneConfig = {
 
     driftAhead: 0.05,
     driftRate: 0.09,
-    bankAngle: 25,
-    bankRate: 2.4,
+    bankAngle: 40,
+    bankRate: 3.2,
+
+    /* De rol om zijn eigen lengteas, bovenop die kanteling. De camera kijkt
+       recht naar beneden, dus je ziet hem als een spanwijdte die korter wordt en
+       één vleugel die naar je toe komt.
+
+       Deze twee getallen horen bij elkaar: de hoek is een bovengrens en het
+       tempo bepaalt hoeveel daarvan hij op een haal echt haalt. Doorgemeten op
+       een besliste haal over de volle breedte, met wat er dan van de spanwijdte
+       overblijft:
+
+         20 / 3,6   haalt 15°, spanwijdte 97%, je moet het weten om het te zien
+         30 / 3,6   haalt 23°, 92%
+         45 / 5,5   haalt 38°, 78%
+         60 / 5,5   haalt 51°, 63%   <- nu, een draak die op zijn kant de bocht in gaat
+         75 / 5,5   haalt 64°, 44%, dan kijk je tegen zijn zij aan
+
+       rollRate hoger dan bankRate, want in de lucht gaat het rollen voor op het
+       draaien. Ze komen hier uit dezelfde gemeten snelheid, dus echt vooruitlopen
+       kan niet, maar met een kortere tijdconstante zie je wel die volgorde.
+
+       leanAngle is het enige dat niet uit zijn snelheid komt maar uit waar jij
+       staat, en dat blijft dus staan als hij stilhangt. Dit draagt de rust: hangt
+       hij ver rechts stil bij een cursor die nog verder rechts staat, dan is dit
+       alles wat er nog van het volgen te zien is. */
+    rollAngle: 60,
+    rollRate: 5.5,
+    leanAngle: 10,
 
     thrustResponse: 6,
     thrustAdapt: 0.3,
@@ -113,13 +141,30 @@ export const defaultConfig: FluidSceneConfig = {
        en geen vervangen. Het tempo staat met opzet los van de vleugelslag van
        0,3 Hz: gaan die twee in de pas lopen, dan hoor je het patroon.
 
-       neckFollow is in radialen: 0,45 is een kwartslag, 1,3 is ruim 75 graden en
-       daarmee niet te missen welke kant hij op kijkt. */
+       neckFollow is in radialen. Het lijf hangt sinds `leanAngle` zelf al naar je
+       toe, dus de kop hoeft het werk niet meer alleen te doen en mag kleiner:
+
+         0,70   40°, de kop doet alles en draait mee als een schotel
+         0,35   20°, genoeg om te zien wie hij aankijkt   <- nu
+         0,18   10°, een blik en geen draai
+
+       lookGive is tot hoe ver om hem heen jij die kop nog stuurt. Daarbuiten
+       kijkt hij zijn eigen kant op, en dat moet ook: recht achter hem klapt de
+       hoek naar een doel van +180° naar -180°, en een kop die dat volgt tolt in
+       één frame rond. Op 2,0 (115°) is hij je al kwijt ruim voordat die omslag
+       in zicht komt, en het weegt over in plaats van om te schakelen.
+
+       gazeSweep is wat er dan overblijft. Kleiner dan neckFollow, want
+       rondkijken is iets anders dan iets aankijken, en traag genoeg dat het
+       leest als kijken en niet als zoeken. */
     tailSway: 0.06,
     tailRate: 1.4,
     tailWave: 3.2,
-    neckFollow: 0.7,
+    neckFollow: 0.35,
     neckRate: 2.2,
+    lookGive: 2,
+    gazeSweep: 0.16,
+    gazeRate: 0.13,
 
     /* De vleugels in de zweefstand. De clip staat daar stil en een stilstaande
        vleugel ziet er dood uit, dus hier komt een trage correctie overheen — met
@@ -136,27 +181,28 @@ export const defaultConfig: FluidSceneConfig = {
     soarLift: 0.09,
     soarRate: 0.35,
 
-    /* De duik. Om de zoveel vleugelslagen laat hij zich vallen en komt hij van
-       opzij weer binnen.
+    /* De duik, en wat hem aanzet: dat jij er niet meer bent. Staat de cursor
+       `idleAfter` seconden stil, of is hij het beeld uit, dan laat hij zich
+       vallen en blijft hij weg tot je weer beweegt.
 
-       In slagen aftellen en niet in seconden, want dat is het verschil tussen
-       een draak die af en toe duikt en een metronoom: hij slaat harder als hij
-       vooruit moet, dus in drukke stukken komt de duik eerder. Deze clip doet
-       vier slagen per rondgang van 3,3 seconde, dus tien slagen is grofweg acht
-       seconden als hij doorwerkt, en langer als hij veel zweeft.
+       Drie seconden is lang genoeg om niet af te gaan op een hand die even
+       stilhangt, en kort genoeg om het verband te leggen tussen ophouden en zien
+       vertrekken.
 
-       Om te testen op 10; later hoger. Op 0 duikt hij nooit.
+       diveEvery is de oude vaste ronde, in vleugelslagen, en staat uit. Boven
+       nul duikt hij ook tussendoor: deze clip doet vier slagen per rondgang van
+       3,3 seconde, dus tien slagen is grofweg acht seconden als hij doorwerkt.
 
        diveAcceleration is een versnelling: hij begint traag en valt steeds
        harder, zoals loslaten. Op 1,8 is hij in ongeveer een seconde onder de
-       rand. */
-    /* wegzakken bij een stilstaande muis. De fog is op 1,6 eenheden compleet,
-       dus op 3 is hij ruim weg en heeft hij nog wat marge. */
-    idleAfter: 3,
-    idleDepth: 3,
-    idleRate: 0.7,
+       rand.
 
-    diveEvery: 10,
+       awayTime is nu een ondergrens en geen wachttijd: zoveel blijft hij
+       minstens weg, ook als je meteen weer beweegt, want anders is de leegte er
+       niet geweest. */
+    idleAfter: 3,
+
+    diveEvery: 0,
     diveSpeed: 1.1,
     diveAcceleration: 3.2,
     diveDepth: 12,

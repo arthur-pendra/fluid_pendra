@@ -15,7 +15,9 @@ import type { PoseConfig, Vec2 } from './types'
  *   blijft.
  *
  *   De nek reageert op jou. De kop draait naar de cursor, verdeeld over elf
- *   schakels zodat het een bocht wordt en geen knik.
+ *   schakels zodat het een bocht wordt en geen knik. Maar alleen zolang je vóór
+ *   hem staat: ga je erachter, dan laat hij je los en kijkt hij zijn eigen kant
+ *   op. Dat is niet alleen gedrag, het houdt hem ook heel — zie `lookHold`.
  *
  *   De vleugels doen iets in de zweefstand. Daar staat de clip stil, en een
  *   stilstaande vleugel ziet er dood uit; een zwevende vogel corrigeert continu
@@ -76,15 +78,14 @@ export const neckWeights = (count: number): number[] => {
 }
 
 /**
- * De hoek waarover de kop moet draaien om van `heading` naar `target` te kijken,
- * geknipt op `limit`.
+ * De hoek van `heading` naar `target`, ongeknipt, van -180° tot 180°.
  *
  * Alles in de coördinaten van het vlak waar het object op zweeft, waar `y` de
  * z-as van de scene is. De uitkomst is een draai om de wereld-op, en die telt
  * tegen de klok in op het scherm — vandaar het minteken op het kruisproduct,
  * want de z-as loopt op het scherm andersom.
  */
-export const lookYaw = (heading: Vec2, target: Vec2, limit: number): number => {
+export const bearing = (heading: Vec2, target: Vec2): number => {
   const length = Math.sqrt(target.x * target.x + target.y * target.y)
   if (length < 1e-6) return 0
 
@@ -93,10 +94,60 @@ export const lookYaw = (heading: Vec2, target: Vec2, limit: number): number => {
 
   const cross = heading.x * y - heading.y * x
   const dot = heading.x * x + heading.y * y
-  const yaw = Math.atan2(-cross, dot)
 
-  return Math.max(-limit, Math.min(limit, yaw))
+  return Math.atan2(-cross, dot)
 }
+
+/**
+ * De hoek waarover de kop moet draaien om van `heading` naar `target` te kijken,
+ * geknipt op `limit`.
+ */
+export const lookYaw = (heading: Vec2, target: Vec2, limit: number): number =>
+  Math.max(-limit, Math.min(limit, bearing(heading, target)))
+
+/**
+ * Waar de kop nog vrij mag draaien voordat hij begint los te laten, als deel
+ * van `give`.
+ *
+ * Niet op de grens zelf loslaten maar er een stuk voor beginnen, want anders is
+ * de overgang een knik: hij volgt tot het laatst en houdt dan ineens op.
+ */
+const LOOK_FADE = 0.5
+
+/**
+ * Hoeveel de cursor de kop nog stuurt, 1 tot 0, naar hoe ver hij om hem heen
+ * staat.
+ *
+ * Dit is de reparatie van een echte fout en niet alleen een verfraaiing. De hoek
+ * naar een doel recht achter hem klapt van +180° naar -180° zodra je er een haar
+ * langs gaat, en een kop die dat volgt zwiept in één frame de hele ronde om. Dat
+ * is het rondtollen dat je ziet als je achter hem gaat staan.
+ *
+ * Met dit gewicht komt hij daar niet eens: ruim voor die omslag is de cursor de
+ * kop al kwijt en kijkt hij zijn eigen kant op. Geëgaliseerd, zodat het overgaat
+ * in plaats van omschakelt, en op nul aan de achterkant zodat de sprong die daar
+ * in de hoek zit met nul vermenigvuldigd wordt.
+ */
+export const lookHold = (heading: Vec2, target: Vec2, give: number): number => {
+  if (give <= 1e-6) return 0
+
+  const away = Math.abs(bearing(heading, target))
+  const held = give * LOOK_FADE
+  if (away <= held) return 1
+
+  const gone = Math.min(1, (away - held) / (give - held))
+  return 1 - gone * gone * (3 - 2 * gone)
+}
+
+/**
+ * Waar hij uit zichzelf naar kijkt, in radialen.
+ *
+ * Wat er overblijft als jij er niet bent of achter hem staat. Waarde-ruis en
+ * geen sinus, om dezelfde reden als overal in dit bestand: een periode zie je
+ * na een minuut kijken terug.
+ */
+export const gazeYaw = (time: number, config: PoseConfig): number =>
+  (noise(time * config.gazeRate + 3.9) * 2 - 1) * config.gazeSweep
 
 /**
  * Naar een hoek toe dempen, met een tempo dat aan de tijd hangt en niet aan de
